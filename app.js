@@ -158,16 +158,16 @@ function toggleTension(val) {
 }
 
 function buildChordName() {
-  let name = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
-  if (selectedTensions.length > 0) name += '(' + selectedTensions.join(',') + ')';
-  if (selectedBass) name += '/' + selectedBass;
+  let name = selectedRoot.replace('♭', 'b') + selectedTriad + selectedSeventh + selectedFunc;
+  if (selectedTensions.length > 0) name += '(' + selectedTensions.map(t => t.replace('b', 'b')).join(',') + ')';
+  if (selectedBass) name += '/' + selectedBass.replace('♭', 'b');
   return name;
 }
 
 function buildChordHTML() {
   let name = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
   if (selectedTensions.length > 0) {
-    const tensionStr = selectedTensions.map(t => t.replace('b', '♭')).join(',');
+    const tensionStr = selectedTensions.join(',');
     name += '<sup>(' + tensionStr + ')</sup>';
   }
   if (selectedBass) name += '/' + selectedBass;
@@ -343,7 +343,7 @@ function drawCanvas(c, r) {
   cx += c.measureText(basePart).width;
 
   if (selectedTensions.length > 0) {
-    const tensionStr = '(' + selectedTensions.map(t => t.replace('b', '♭')).join(',') + ')';
+    const tensionStr = '(' + selectedTensions.join(',') + ')';
     c.font = `400 ${SUP_SIZE}px "Times New Roman", serif`;
     c.fillText(tensionStr, cx, SUP_Y);
     cx += c.measureText(tensionStr).width;
