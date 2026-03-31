@@ -151,8 +151,7 @@ function toggleTension(val) {
   if (idx !== -1) selectedTensions.splice(idx, 1);
   else selectedTensions.push(val);
   document.querySelectorAll('#tension-group .sel-btn').forEach(b => {
-    const key = b.textContent.replace('♭', 'b');
-    b.classList.toggle('active', selectedTensions.includes(key));
+    b.classList.toggle('active', selectedTensions.includes(b.textContent));
   });
   updateChordDisplay();
 }
