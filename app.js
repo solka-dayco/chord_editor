@@ -254,6 +254,8 @@ function drawCanvas(c, r) {
   c.clearRect(0, 0, w, canvasH);
   c.fillStyle = '#ffffff';
   c.fillRect(0, 0, w, canvasH);
+  c.fillRect(tRight, 0, w - tRight, canvasH);
+  c.fillRect(0, tBot + Math.round(60 * r), w, canvasH);
 
   // 격자 배경
   c.fillStyle = '#ffffff';
