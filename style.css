@@ -253,6 +253,7 @@ canvas { display: block; cursor: crosshair; }
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .hint {
@@ -272,6 +273,7 @@ canvas { display: block; cursor: crosshair; }
   cursor: pointer;
   transition: all .15s;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .btn-ghost {
   background: transparent;
