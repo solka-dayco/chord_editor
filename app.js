@@ -2,29 +2,51 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-const TABLE_RATIO = 404 / 604;
-const W = 680;
-const TABLE_H = Math.round(W * TABLE_RATIO);
-const TABLE_Y_OFFSET = 160;
-const TABLE_PADDING = 30;
-const CANVAS_H = TABLE_Y_OFFSET + TABLE_H + 60;
+// ── 고정 논리 크기 (PNG 저장 기준) ──
+const BASE_W = 680;
+const TABLE_RATIO    = 404 / 604;
+const BASE_TABLE_H   = Math.round(BASE_W * TABLE_RATIO);
+const BASE_Y_OFFSET  = 160;
+const BASE_MARGIN_X  = 80;
+const BASE_MARGIN_Y  = 90;
+const BASE_CANVAS_H  = BASE_Y_OFFSET + BASE_TABLE_H + 60;
 
-canvas.width  = W;
-canvas.height = CANVAS_H;
+// ── 런타임 스케일 계산 ──
+// canvas-inner 너비를 기준으로 BASE_W 대비 비율을 구해 모든 좌표에 적용
+let RATIO = 1;
 
-const SCALE = W / 604;
-const MARGIN_X = 80;  // 좌우 여백
-const MARGIN_Y = 90;
-const TABLE_LEFT  = MARGIN_X;
-const TABLE_RIGHT = W - MARGIN_X;
-const TABLE_TOP   = TABLE_Y_OFFSET + MARGIN_Y;
-const TABLE_BOT   = TABLE_Y_OFFSET + TABLE_H - MARGIN_Y;
+function calcRatio() {
+  const inner = canvas.parentElement; // .canvas-inner
+  const availW = inner.clientWidth || BASE_W;
+  RATIO = Math.min(1, availW / BASE_W);
+}
+
+// 런타임 실제 크기 (RATIO 적용)
+function W()        { return Math.round(BASE_W       * RATIO); }
+function CANVAS_H() { return Math.round(BASE_CANVAS_H * RATIO); }
+function TABLE_H()  { return Math.round(BASE_TABLE_H  * RATIO); }
+function Y_OFFSET() { return Math.round(BASE_Y_OFFSET * RATIO); }
+function MARGIN_X() { return Math.round(BASE_MARGIN_X * RATIO); }
+function MARGIN_Y() { return Math.round(BASE_MARGIN_Y * RATIO); }
+
+function TABLE_LEFT()  { return MARGIN_X(); }
+function TABLE_RIGHT() { return W() - MARGIN_X(); }
+function TABLE_TOP()   { return Y_OFFSET() + MARGIN_Y(); }
+function TABLE_BOT()   { return Y_OFFSET() + TABLE_H() - MARGIN_Y(); }
+function FW()          { return (TABLE_RIGHT() - TABLE_LEFT()) / FRETS; }
+function SH()          { return (TABLE_BOT() - TABLE_TOP()) / (STRINGS - 1); }
+function DOT_SIZE()    { return Math.round(SH() * 0.85); }
+function SCALE()       { return W() / 604; }
 
 const STRINGS = 6;
 const FRETS   = 4;
-const FW = (TABLE_RIGHT - TABLE_LEFT) / FRETS;
-const SH = (TABLE_BOT   - TABLE_TOP)  / (STRINGS - 1);
-const DOT_SIZE = Math.round(SH * 0.85);
+
+function resizeCanvas() {
+  calcRatio();
+  canvas.width  = W();
+  canvas.height = CANVAS_H();
+  draw();
+}
 
 // ── 이미지 로드 ──
 const IMAGES = {};
@@ -43,7 +65,7 @@ let loadedCount = 0;
 IMAGE_LIST.forEach(key => {
   const img = new Image();
   img.src = `image/${key}.png`;
-  img.onload = () => { if (++loadedCount === IMAGE_LIST.length) draw(); };
+  img.onload = () => { if (++loadedCount === IMAGE_LIST.length) resizeCanvas(); };
   IMAGES[key] = img;
 });
 
@@ -51,23 +73,19 @@ IMAGE_LIST.forEach(key => {
 const ROOTS_SHARP = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
 const ROOTS_FLAT  = ['A', 'Bb', 'B', 'C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab'];
 
-let accidental  = 'sharp';
-let selectedRoot    = 'A';
-let selectedTriad   = '';
-let selectedSeventh = '';
-let selectedFunc    = '';
+let accidental       = 'sharp';
+let selectedRoot     = 'A';
+let selectedTriad    = '';
+let selectedSeventh  = '';
+let selectedFunc     = '';
 let selectedTensions = [];
-let selectedBass    = '';
+let selectedBass     = '';
 
-// ── 근음 버튼 렌더링 ──
 function renderRootBtns() {
   const roots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
   const group = document.getElementById('root-group');
   group.innerHTML = '';
-
-  // 현재 선택된 근음이 새 목록에 없으면 첫 번째로 초기화
   if (!roots.includes(selectedRoot)) selectedRoot = roots[0];
-
   roots.forEach(r => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (r === selectedRoot ? ' active' : '');
@@ -77,18 +95,15 @@ function renderRootBtns() {
   });
 }
 
-// ── 분수코드 근음 버튼 렌더링 ──
 function renderBassBtns() {
   const roots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
   const group = document.getElementById('bass-group');
   group.innerHTML = '';
-
   const noneBtn = document.createElement('button');
   noneBtn.className = 'sel-btn' + (selectedBass === '' ? ' active' : '');
   noneBtn.textContent = '없음';
   noneBtn.onclick = () => { selectedBass = ''; renderBassBtns(); updateChordDisplay(); };
   group.appendChild(noneBtn);
-
   roots.forEach(r => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (r === selectedBass ? ' active' : '');
@@ -98,7 +113,6 @@ function renderBassBtns() {
   });
 }
 
-// ── #/b 모드 전환 ──
 function setAccidental(mode) {
   accidental = mode;
   document.getElementById('acc-sharp').classList.toggle('active', mode === 'sharp');
@@ -108,7 +122,6 @@ function setAccidental(mode) {
   updateChordDisplay();
 }
 
-// ── 3화음 선택 ──
 function selectTriad(val) {
   selectedTriad = val;
   document.querySelectorAll('#triad-group .sel-btn').forEach(b => {
@@ -117,7 +130,6 @@ function selectTriad(val) {
   updateChordDisplay();
 }
 
-// ── 7음 선택 ──
 function selectSeventh(val) {
   selectedSeventh = val;
   document.querySelectorAll('#seventh-group .sel-btn').forEach(b => {
@@ -126,7 +138,6 @@ function selectSeventh(val) {
   updateChordDisplay();
 }
 
-// ── 기능 선택 ──
 function selectFunc(val) {
   selectedFunc = val;
   document.querySelectorAll('#func-group .sel-btn').forEach(b => {
@@ -135,46 +146,28 @@ function selectFunc(val) {
   updateChordDisplay();
 }
 
-// ── 텐션 토글 (다중선택) ──
 function toggleTension(val) {
   const idx = selectedTensions.indexOf(val);
-  if (idx !== -1) {
-    selectedTensions.splice(idx, 1);
-  } else {
-    selectedTensions.push(val);
-  }
+  if (idx !== -1) selectedTensions.splice(idx, 1);
+  else selectedTensions.push(val);
   document.querySelectorAll('#tension-group .sel-btn').forEach(b => {
-    const key = b.textContent
-      .replace('♭', 'b')
-      .replace('#', '#');
+    const key = b.textContent.replace('♭', 'b');
     b.classList.toggle('active', selectedTensions.includes(key));
   });
   updateChordDisplay();
 }
 
-// ── 코드명 조합 ──
 function buildChordName() {
-  let name = selectedRoot;
-  if (selectedTriad) name += selectedTriad;
-  if (selectedSeventh) name += selectedSeventh;
-  if (selectedFunc) name += selectedFunc;
-  if (selectedTensions.length > 0) {
-    name += '(' + selectedTensions.join(',') + ')';
-  }
+  let name = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
+  if (selectedTensions.length > 0) name += '(' + selectedTensions.join(',') + ')';
   if (selectedBass) name += '/' + selectedBass;
   return name;
 }
 
-// ── 코드명 HTML 렌더링 (텐션 위첨자) ──
 function buildChordHTML() {
-  let name = selectedRoot;
-  if (selectedTriad) name += selectedTriad;
-  if (selectedSeventh) name += selectedSeventh;
-  if (selectedFunc) name += selectedFunc;
+  let name = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
   if (selectedTensions.length > 0) {
-    const tensionStr = selectedTensions
-      .map(t => t.replace('b', '♭'))
-      .join(',');
+    const tensionStr = selectedTensions.map(t => t.replace('b', '♭')).join(',');
     name += '<sup>(' + tensionStr + ')</sup>';
   }
   if (selectedBass) name += '/' + selectedBass;
@@ -192,17 +185,12 @@ let selectedFinger = 1;
 let dots        = [];
 let barreActive = {};
 let openMute    = new Array(STRINGS).fill(null);
-let rootMode  = false;
-let rootIndex = -1; // 근음으로 표시할 줄 인덱스 (-1 = 없음)
+let rootMode    = false;
+let rootIndex   = -1;
 
 function calcRootIndex() {
-  // dots와 open 중 가장 아래(높은 인덱스) 줄을 근음으로
-  const dotMaxS  = dots.length > 0
-    ? Math.max(...dots.map(d => d.s))
-    : -1;
-  const openMaxS = openMute.reduce(
-    (max, v, i) => (v === 'open' ? Math.max(max, i) : max), -1
-  );
+  const dotMaxS  = dots.length > 0 ? Math.max(...dots.map(d => d.s)) : -1;
+  const openMaxS = openMute.reduce((max, v, i) => (v === 'open' ? Math.max(max, i) : max), -1);
   return Math.max(dotMaxS, openMaxS);
 }
 
@@ -213,7 +201,6 @@ function toggleRootMode() {
   draw();
 }
 
-// ── 편집 컨트롤 ──
 function setMode(m) {
   currentMode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -247,23 +234,38 @@ function getDotImgKey(n, isRoot) {
   return n === 0 ? prefix + '_t' : prefix + String(n);
 }
 
-// ── 렌더링 ──
-function drawCanvas(c, exportMode = false) {
-  c.clearRect(0, 0, W, CANVAS_H);
-  c.fillStyle = '#ffffff';
-  c.fillRect(0, 0, W, CANVAS_H);
+// ── 렌더링 (논리 좌표 r로 스케일된 캔버스에 그림) ──
+function drawCanvas(c, r) {
+  const w        = Math.round(BASE_W        * r);
+  const canvasH  = Math.round(BASE_CANVAS_H * r);
+  const tableH   = Math.round(BASE_TABLE_H  * r);
+  const yOffset  = Math.round(BASE_Y_OFFSET * r);
+  const marginX  = Math.round(BASE_MARGIN_X * r);
+  const marginY  = Math.round(BASE_MARGIN_Y * r);
+  const tLeft    = marginX;
+  const tRight   = w - marginX;
+  const tTop     = yOffset + marginY;
+  const tBot     = yOffset + tableH - marginY;
+  const fw       = (tRight - tLeft) / FRETS;
+  const sh       = (tBot - tTop) / (STRINGS - 1);
+  const dotSize  = Math.round(sh * 0.85);
+  const scale    = w / 604;
 
-  // 격자
+  c.clearRect(0, 0, w, canvasH);
   c.fillStyle = '#ffffff';
-  c.fillRect(0, TABLE_Y_OFFSET, W, TABLE_H);
+  c.fillRect(0, 0, w, canvasH);
+
+  // 격자 배경
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, yOffset, w, tableH);
 
   // 너트
   c.strokeStyle = '#000000';
-  c.lineWidth = 6 * SCALE;
+  c.lineWidth = 6 * scale;
   c.lineCap = 'round';
   c.beginPath();
-  c.moveTo(TABLE_LEFT, TABLE_TOP);
-  c.lineTo(TABLE_LEFT, TABLE_BOT);
+  c.moveTo(tLeft, tTop);
+  c.lineTo(tLeft, tBot);
   c.stroke();
 
   // 프렛선
@@ -271,29 +273,26 @@ function drawCanvas(c, exportMode = false) {
   c.lineWidth = 1;
   c.lineCap = 'butt';
   for (let f = 0; f <= FRETS; f++) {
-    const x = TABLE_LEFT + f * FW;
-    c.beginPath(); c.moveTo(x, TABLE_TOP); c.lineTo(x, TABLE_BOT); c.stroke();
+    const x = tLeft + f * fw;
+    c.beginPath(); c.moveTo(x, tTop); c.lineTo(x, tBot); c.stroke();
   }
 
   // 줄선
   for (let s = 0; s < STRINGS; s++) {
-    const y = TABLE_TOP + s * SH;
-    c.beginPath(); c.moveTo(TABLE_LEFT, y); c.lineTo(TABLE_RIGHT, y); c.stroke();
+    const y = tTop + s * sh;
+    c.beginPath(); c.moveTo(tLeft, y); c.lineTo(tRight, y); c.stroke();
   }
 
   // 오픈/뮤트
   openMute.forEach((v, s) => {
     if (!v) return;
-    const y = TABLE_TOP + s * SH;
-    const x = TABLE_LEFT - 40;
+    const y = tTop + s * sh;
+    const x = tLeft - 40 * r;
     let key;
-    if (v === 'mute') {
-      key = 'mute';
-    } else {
-      key = (rootMode && s === rootIndex) ? 'open_root' : 'open';
-    }
+    if (v === 'mute') key = 'mute';
+    else key = (rootMode && s === rootIndex) ? 'open_root' : 'open';
     if (!IMAGES[key]) return;
-    c.drawImage(IMAGES[key], x - DOT_SIZE / 2, y - DOT_SIZE / 2, DOT_SIZE, DOT_SIZE);
+    c.drawImage(IMAGES[key], x - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
   });
 
   // barre
@@ -306,10 +305,10 @@ function drawCanvas(c, exportMode = false) {
     const count = maxS - minS + 1;
     const key = BARRE_KEYS[count];
     if (!key || !IMAGES[key]) return;
-    const x = TABLE_LEFT + (f - 0.5) * FW;
-    const y = TABLE_TOP + minS * SH;
-    const barreH = SH * (count - 1) + DOT_SIZE;
-    c.drawImage(IMAGES[key], x - DOT_SIZE / 2, y - DOT_SIZE / 2, DOT_SIZE, barreH);
+    const x = tLeft + (f - 0.5) * fw;
+    const y = tTop + minS * sh;
+    const barreH = sh * (count - 1) + dotSize;
+    c.drawImage(IMAGES[key], x - dotSize / 2, y - dotSize / 2, dotSize, barreH);
   });
 
   // dot
@@ -318,35 +317,29 @@ function drawCanvas(c, exportMode = false) {
     const isRoot = rootMode && d.s === rootIndex;
     const key = getDotImgKey(d.n, isRoot);
     if (!IMAGES[key]) return;
-    const x = TABLE_LEFT + (d.f - 0.5) * FW;
-    const y = TABLE_TOP + d.s * SH;
-    c.drawImage(IMAGES[key], x - DOT_SIZE / 2, y - DOT_SIZE / 2, DOT_SIZE, DOT_SIZE);
+    const x = tLeft + (d.f - 0.5) * fw;
+    const y = tTop + d.s * sh;
+    c.drawImage(IMAGES[key], x - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
   });
 
-  // 코드명 (최상단) - 파트별 분리 렌더링
+  // 코드명 (최상단)
   c.save();
   c.fillStyle = '#ffffff';
-  c.fillRect(0, 0, W, TABLE_TOP - DOT_SIZE / 2);
+  c.fillRect(0, 0, w, tTop - dotSize / 2);
   c.fillStyle = '#1a1714';
   c.textBaseline = 'alphabetic';
 
-  const BASE_SIZE = 80;
-  const SUP_SIZE  = 44;
-  const BASE_Y    = TABLE_Y_OFFSET - 10;
-  const SUP_Y     = BASE_Y - 32;
+  const BASE_SIZE = Math.round(80 * r);
+  const SUP_SIZE  = Math.round(44 * r);
+  const BASE_Y    = yOffset - Math.round(10 * r);
+  const SUP_Y     = BASE_Y - Math.round(32 * r);
 
-  let cx = TABLE_LEFT;
-
-  // 근음 + 3화음 + 7음 + 기능
-  const basePart = selectedRoot
-    + selectedTriad
-    + selectedSeventh
-    + selectedFunc;
+  let cx = tLeft;
+  const basePart = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
   c.font = `400 ${BASE_SIZE}px "Times New Roman", serif`;
   c.fillText(basePart, cx, BASE_Y);
   cx += c.measureText(basePart).width;
 
-  // 텐션 위첨자
   if (selectedTensions.length > 0) {
     const tensionStr = '(' + selectedTensions.map(t => t.replace('b', '♭')).join(',') + ')';
     c.font = `400 ${SUP_SIZE}px "Times New Roman", serif`;
@@ -354,28 +347,27 @@ function drawCanvas(c, exportMode = false) {
     cx += c.measureText(tensionStr).width;
   }
 
-  // 분수코드
   if (selectedBass) {
     c.font = `400 ${BASE_SIZE}px "Times New Roman", serif`;
     c.fillText('/' + selectedBass, cx, BASE_Y);
   }
 
-  // 프렛 번호 (2번째 프렛 칸 중앙, TABLE_BOT 아래)
+  // 프렛 번호
   const fretNumEl = document.getElementById('fret-number');
   const fretNum = fretNumEl ? fretNumEl.value.trim() : '';
   if (fretNum) {
-    c.font = '400 28px "Times New Roman", serif';
+    c.font = `400 ${Math.round(28 * r)}px "Times New Roman", serif`;
     c.fillStyle = '#1a1714';
     c.textAlign = 'center';
     c.textBaseline = 'top';
-    c.fillText(fretNum, TABLE_LEFT + 1.5 * FW, TABLE_BOT + 16);
+    c.fillText(fretNum, tLeft + 1.5 * fw, tBot + Math.round(16 * r));
   }
 
   c.restore();
 }
 
 function draw() {
-  drawCanvas(ctx);
+  drawCanvas(ctx, RATIO);
   updateBarreBtns();
 }
 
@@ -385,15 +377,16 @@ function updateBarreBtns() {
   container.innerHTML = '';
 
   const barreFrets = getBarreFrets();
-  const canvasRect = canvas.getBoundingClientRect();
-  const dispScaleX = canvasRect.width  / W;
-  const dispScaleY = canvasRect.height / CANVAS_H;
+  const tLeft   = MARGIN_X();
+  const tTop    = TABLE_TOP();
+  const fw      = FW();
+  const dotSize = DOT_SIZE();
 
   barreFrets.forEach(f => {
-    const cx = TABLE_LEFT + (f - 0.5) * FW;
-    const cy = TABLE_TOP - DOT_SIZE - 4;
-    const left = cx * dispScaleX - 12;
-    const top  = cy * dispScaleY;
+    const cx   = tLeft + (f - 0.5) * fw;
+    const cy   = tTop - dotSize - 4;
+    const left = cx - 12;
+    const top  = cy - 12;
 
     const btn = document.createElement('button');
     btn.textContent = 'B';
@@ -408,17 +401,14 @@ function updateBarreBtns() {
       background: ${barreActive[f] ? '#1a1714' : '#fff'};
       color: ${barreActive[f] ? '#fff' : '#888'};
       font-size: 11px;
-      font-family: 'DM Mono', monospace;
+      font-family: 'Pretendard', sans-serif;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 0;
     `;
-    btn.onclick = () => {
-      barreActive[f] = !barreActive[f];
-      draw();
-    };
+    btn.onclick = () => { barreActive[f] = !barreActive[f]; draw(); };
     container.appendChild(btn);
   });
 }
@@ -426,22 +416,24 @@ function updateBarreBtns() {
 // ── 클릭 처리 ──
 canvas.addEventListener('click', function(e) {
   const rect = canvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) * (W / rect.width);
-  const my = (e.clientY - rect.top)  * (CANVAS_H / rect.height);
+  const scaleX = W() / rect.width;
+  const scaleY = CANVAS_H() / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top)  * scaleY;
 
-  const si = Math.round((my - TABLE_TOP) / SH);
+  const si = Math.round((my - TABLE_TOP()) / SH());
   if (si < 0 || si > STRINGS - 1) return;
 
-  if (mx >= TABLE_LEFT - 50 && mx < TABLE_LEFT) {
+  if (mx >= TABLE_LEFT() - 50 && mx < TABLE_LEFT()) {
     const cur = openMute[si];
     openMute[si] = cur === null ? 'open' : cur === 'open' ? 'mute' : null;
     if (rootMode) rootIndex = calcRootIndex();
     draw(); return;
   }
 
-  if (mx < TABLE_LEFT || mx > TABLE_RIGHT + 5) return;
+  if (mx < TABLE_LEFT() || mx > TABLE_RIGHT() + 5) return;
 
-  const fi = Math.floor((mx - TABLE_LEFT) / FW) + 1;
+  const fi = Math.floor((mx - TABLE_LEFT()) / FW()) + 1;
   if (fi < 1 || fi > FRETS) return;
 
   if (currentMode === 'finger') {
@@ -460,21 +452,24 @@ canvas.addEventListener('click', function(e) {
   }
 });
 
-// ── PNG 저장 ──
+// ── PNG 저장 (항상 BASE_W 고정 해상도) ──
 function savePNG() {
   const scale = 3;
   const expCanvas = document.createElement('canvas');
-  expCanvas.width  = W * scale;
-  expCanvas.height = CANVAS_H * scale;
+  expCanvas.width  = BASE_W        * scale;
+  expCanvas.height = BASE_CANVAS_H * scale;
   const ec = expCanvas.getContext('2d');
   ec.scale(scale, scale);
-  drawCanvas(ec, true);
+  drawCanvas(ec, 1); // r=1 → BASE_W 기준 원본 크기로 그림
 
   const link = document.createElement('a');
   link.download = buildChordName() + '_chord.png';
   link.href = expCanvas.toDataURL('image/png');
   link.click();
 }
+
+// ── 리사이즈 대응 ──
+window.addEventListener('resize', resizeCanvas);
 
 // ── 초기화 ──
 renderRootBtns();
