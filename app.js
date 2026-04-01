@@ -183,7 +183,7 @@ let currentMode    = 'finger';
 let selectedFinger = 1;
 let dots        = [];
 let barreActive = {};
-let openMute    = new Array(STRINGS).fill(null);
+let openMute    = new Array(STRINGS).fill('open');
 let rootMode    = false;
 let rootIndex   = -1;
 
@@ -218,7 +218,7 @@ function selectFinger(n) {
 function resetAll() {
   dots        = [];
   barreActive = {};
-  openMute    = new Array(STRINGS).fill(null);
+  openMute    = new Array(STRINGS).fill('open');
   draw();
 }
 
@@ -427,7 +427,8 @@ canvas.addEventListener('click', function(e) {
 
   if (mx >= TABLE_LEFT() - 50 && mx < TABLE_LEFT()) {
     const cur = openMute[si];
-    openMute[si] = cur === null ? 'open' : cur === 'open' ? 'mute' : null;
+    openMute[si] = cur === 'mute' ? 'open' : 'mute';
+    if (openMute[si] !== null) dots = dots.filter(d => d.s !== si);
     if (rootMode) rootIndex = calcRootIndex();
     draw(); return;
   }
@@ -440,15 +441,16 @@ canvas.addEventListener('click', function(e) {
   if (currentMode === 'finger') {
     const idx = dots.findIndex(d => d.s === si && d.f === fi);
     if (idx !== -1) {
+      // 같은 위치 클릭 시 제거 → 개방현(open)으로 복귀
       dots.splice(idx, 1);
-      if (rootMode) rootIndex = calcRootIndex();
+      openMute[si] = 'open';
     } else {
+      // 같은 줄의 기존 dot 제거 + openMute 초기화
+      dots = dots.filter(d => d.s !== si);
+      openMute[si] = null;
       dots.push({ s: si, f: fi, n: selectedFinger });
-      if (rootMode) rootIndex = calcRootIndex();
     }
-    draw();
-  } else if (currentMode === 'open' || currentMode === 'mute') {
-    openMute[si] = openMute[si] === currentMode ? null : currentMode;
+    if (rootMode) rootIndex = calcRootIndex();
     draw();
   }
 });
@@ -476,3 +478,134 @@ window.addEventListener('resize', resizeCanvas);
 renderRootBtns();
 renderBassBtns();
 updateChordDisplay();
+
+// ── Audio Engine (Karplus-Strong, BufferSourceNode 방식) ──
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+const OPEN_MIDI = [64, 59, 55, 50, 45, 40]; // s=0(1번줄 E4) ~ s=5(6번줄 E2)
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// Karplus-Strong을 OfflineAudioContext로 미리 렌더링 후 BufferSourceNode로 재생
+async function renderKarplusStrong(freq, duration, isMute) {
+  const sampleRate = 44100;
+  const totalSamples = Math.round(sampleRate * duration);
+  const offline = new OfflineAudioContext(1, totalSamples, sampleRate);
+
+  if (isMute) {
+    // 뮤트: 짧은 노이즈
+    const buf = offline.createBuffer(1, totalSamples, sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < Math.min(2000, totalSamples); i++) {
+      d[i] = (Math.random() * 2 - 1) * (1 - i / 2000) * 0.3;
+    }
+    const src = offline.createBufferSource();
+    src.buffer = buf;
+    src.connect(offline.destination);
+    src.start(0);
+  } else {
+    // Karplus-Strong
+    const N = Math.round(sampleRate / freq);
+    const buf = offline.createBuffer(1, totalSamples, sampleRate);
+    const d = buf.getChannelData(0);
+
+    // 딜레이 라인 초기화 (노이즈)
+    const delay = new Float32Array(N);
+    for (let i = 0; i < N; i++) delay[i] = Math.random() * 2 - 1;
+
+    // 전체 샘플 계산
+    for (let i = 0; i < totalSamples; i++) {
+      const idx = i % N;
+      const next = (i + 1) % N;
+      d[i] = delay[idx];
+      delay[idx] = 0.996 * 0.5 * (delay[idx] + delay[next]);
+    }
+
+    const src = offline.createBuffer(1, totalSamples, sampleRate);
+    src.getChannelData(0).set(d);
+
+    // 게인 엔벨로프
+    const gainNode = offline.createGain();
+    gainNode.gain.setValueAtTime(0.7, 0);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, duration);
+
+    const source = offline.createBufferSource();
+    source.buffer = src;
+    source.connect(gainNode);
+    gainNode.connect(offline.destination);
+    source.start(0);
+  }
+
+  return await offline.startRendering();
+}
+
+// 렌더링된 버퍼 캐시
+const renderedCache = {};
+
+async function getRenderedBuffer(freq, duration) {
+  const key = freq.toFixed(2);
+  if (!renderedCache[key]) {
+    renderedCache[key] = await renderKarplusStrong(freq, duration, false);
+  }
+  return renderedCache[key];
+}
+
+function calcActualFret(f) {
+  const fretNumEl = document.getElementById('fret-number');
+  const inputFret = parseInt(fretNumEl.value) || 1;
+  return f === 0 ? 0 : (inputFret - 2) + f;
+}
+
+function calcStringNotes() {
+  const notes = [];
+  for (let s = 0; s < STRINGS; s++) {
+    const state = openMute[s];
+    if (state === 'mute') continue;
+    const dot = dots.find(d => d.s === s);
+    if (dot) {
+      const actualFret = calcActualFret(dot.f);
+      notes.push({ s, midi: OPEN_MIDI[s] + actualFret, isMute: false });
+    } else {
+      // null이든 open이든 개방현으로 재생
+      notes.push({ s, midi: OPEN_MIDI[s], isMute: false });
+    }
+  }
+  return notes;
+}
+
+async function strumChord() {
+  const ctx = getAudioCtx();
+  if (ctx.state === 'suspended') await ctx.resume();
+  Object.keys(renderedCache).forEach(k => delete renderedCache[k]);
+
+  const notes = calcStringNotes();
+  if (notes.length === 0) return;
+
+  notes.sort((a, b) => b.s - a.s); // 6번줄(낮은음) → 1번줄(높은음)
+
+  const DURATION = 2.5;
+  const STRUM_INTERVAL = 0.04; // 단위 : s ex)0.03 = 30ms
+  const now = ctx.currentTime + 0.05;
+
+  // 모든 버퍼 미리 렌더링
+  const buffers = await Promise.all(notes.map(note => {
+    return getRenderedBuffer(midiToFreq(note.midi), DURATION);
+  }));
+
+  // 스트럼 순서대로 재생
+  buffers.forEach((buffer, i) => {
+    const startTime = now + i * STRUM_INTERVAL;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(startTime);
+  });
+}
