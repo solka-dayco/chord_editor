@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>기타 코드표 에디터</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="header">
+    <h1>Chord Editor</h1>
+    <span>기타 코드표 제작 도구</span>
+  </div>
+
+  <div class="card">
+
+    <!-- ── 코드명 빌더 ── -->
+    <div class="chord-builder">
+
+      <!-- 행 1: #/b 모드 + 근음 -->
+      <div class="builder-row">
+        <div class="accidental-toggle">
+          <button class="acc-btn active" id="acc-sharp" onclick="setAccidental('sharp')">#</button>
+          <button class="acc-btn" id="acc-flat" onclick="setAccidental('flat')">b</button>
+        </div>
+        <div class="divider"></div>
+        <div class="builder-group" id="root-group"></div>
+      </div>
+
+      <!-- 행 2: 3화음 -->
+      <div class="builder-row">
+        <span class="builder-label">3화음</span>
+        <div class="builder-group" id="triad-group">
+          <button class="sel-btn active" onclick="selectTriad('')">M</button>
+          <button class="sel-btn" onclick="selectTriad('m')">m</button>
+          <button class="sel-btn" onclick="selectTriad('aug')">aug</button>
+          <button class="sel-btn" onclick="selectTriad('dim')">dim</button>
+        </div>
+      </div>
+
+      <!-- 행 3: 7음 -->
+      <div class="builder-row">
+        <span class="builder-label">7음</span>
+        <div class="builder-group" id="seventh-group">
+          <button class="sel-btn active" onclick="selectSeventh('')">없음</button>
+          <button class="sel-btn" onclick="selectSeventh('M7')">M7</button>
+          <button class="sel-btn" onclick="selectSeventh('7')">7</button>
+          <button class="sel-btn" onclick="selectSeventh('6')">6</button>
+        </div>
+      </div>
+
+      <!-- 행 4: 기능 -->
+      <div class="builder-row">
+        <span class="builder-label">기능</span>
+        <div class="builder-group" id="func-group">
+          <button class="sel-btn active" onclick="selectFunc('')">없음</button>
+          <button class="sel-btn" onclick="selectFunc('sus4')">sus4</button>
+          <button class="sel-btn" onclick="selectFunc('add9')">add9</button>
+        </div>
+      </div>
+
+      <!-- 행 5: 텐션 (다중선택) -->
+      <div class="builder-row">
+        <span class="builder-label">텐션</span>
+        <div class="builder-group" id="tension-group">
+          <button class="sel-btn toggle" onclick="toggleTension('b9')">b9</button>
+          <button class="sel-btn toggle" onclick="toggleTension('9')">9</button>
+          <button class="sel-btn toggle" onclick="toggleTension('#9')">#9</button>
+          <button class="sel-btn toggle" onclick="toggleTension('11')">11</button>
+          <button class="sel-btn toggle" onclick="toggleTension('#11')">#11</button>
+          <button class="sel-btn toggle" onclick="toggleTension('b13')">b13</button>
+          <button class="sel-btn toggle" onclick="toggleTension('13')">13</button>
+        </div>
+      </div>
+
+      <!-- 행 6: 분수코드 -->
+      <div class="builder-row">
+        <span class="builder-label">분수</span>
+        <div class="builder-group" id="bass-group">
+          <button class="sel-btn active" onclick="selectBass('')">없음</button>
+        </div>
+      </div>
+
+      <!-- 미리보기 -->
+      <div class="chord-preview">
+        <span class="preview-label">코드명</span>
+        <span id="chord-display" class="chord-display">A</span>
+      </div>
+
+    </div>
+
+    <div class="divider-h"></div>
+
+    <!-- ── 툴바 ── -->
+    <div class="toolbar">
+      <div class="tool-group">
+        <button class="mode-btn active" id="mode-finger">손가락</button>
+        <button class="mode-btn" id="btn-root" onclick="toggleRootMode()">근음</button>
+      </div>
+      <div class="divider"></div>
+      <span class="label">프렛</span>
+      <input id="fret-number" type="number" min="2" max="18" value="2"
+        style="width:52px;font-family:'DM Mono',monospace;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:transparent;color:var(--text-primary);outline:none;"
+        onchange="onFretInput(this)" />
+      <div class="divider"></div>
+      <button class="mode-btn" id="btn-finger-num" onclick="toggleFingerNum()">번호</button>
+      <div class="finger-group" id="finger-group">
+        <button class="finger-btn selected" id="f1" onclick="selectFinger(1)">1</button>
+        <button class="finger-btn" id="f2" onclick="selectFinger(2)">2</button>
+        <button class="finger-btn" id="f3" onclick="selectFinger(3)">3</button>
+        <button class="finger-btn" id="f4" onclick="selectFinger(4)">4</button>
+        <button class="finger-btn" id="f0" onclick="selectFinger(0)">T</button>
+      </div>
+    </div>
+
+    <!-- ── 캔버스 ── -->
+    <div class="canvas-wrap">
+      <div class="canvas-inner">
+        <canvas id="c"></canvas>
+        <div id="barre-btns"></div>
+      </div>
+    </div>
+
+    <!-- ── 액션 ── -->
+    <div class="actions">
+      <span class="hint">격자를 클릭해 입력 · 다시 클릭하면 제거</span>
+      <div class="btn-group">
+        <button class="btn btn-ghost" onclick="resetAll()">초기화</button>
+        <button class="btn btn-ghost" onclick="strumChord()">▶ 재생</button>
+        <button class="btn btn-primary" onclick="savePNG()">PNG 저장</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
