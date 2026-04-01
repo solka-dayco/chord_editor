@@ -121,7 +121,7 @@ function selectSeventh(val) {
 function selectFunc(val) {
   selectedFunc = val;
   document.querySelectorAll('#func-group .sel-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val)));
+    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val === 'b5' ? '(b5)' : val)));
   updateChordDisplay();
 }
 
