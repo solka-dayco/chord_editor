@@ -96,17 +96,17 @@
     <!-- ── 툴바 ── -->
     <div class="toolbar">
       <div class="tool-group">
-        <button class="mode-btn active" id="mode-finger" onclick="setMode('finger')">손가락</button>
+        <button class="mode-btn active" id="mode-finger">손가락</button>
         <button class="mode-btn" id="btn-root" onclick="toggleRootMode()">근음</button>
       </div>
       <div class="divider"></div>
       <span class="label">프렛</span>
-      <input id="fret-number" type="number" min="2" max="24" value="2"
+      <input id="fret-number" type="number" min="2" max="18" value="2"
         style="width:52px;font-family:'DM Mono',monospace;font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);background:transparent;color:var(--text-primary);outline:none;"
-        oninput="draw()" />
+        onchange="onFretInput(this)" />
       <div class="divider"></div>
-      <span class="label">번호</span>
-      <div class="finger-group">
+      <button class="mode-btn" id="btn-finger-num" onclick="toggleFingerNum()">번호</button>
+      <div class="finger-group" id="finger-group">
         <button class="finger-btn selected" id="f1" onclick="selectFinger(1)">1</button>
         <button class="finger-btn" id="f2" onclick="selectFinger(2)">2</button>
         <button class="finger-btn" id="f3" onclick="selectFinger(3)">3</button>
