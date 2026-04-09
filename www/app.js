@@ -121,7 +121,7 @@ function selectSeventh(val) {
 function selectFunc(val) {
   selectedFunc = val;
   document.querySelectorAll('#func-group .sel-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val)));
+    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val === 'b5' ? '(b5)' : val)));
   updateChordDisplay();
 }
 
@@ -141,7 +141,9 @@ function buildChordName() {
 }
 
 function buildChordHTML() {
-  let n = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
+  let n = selectedRoot + selectedTriad + selectedSeventh;
+  if (selectedFunc === 'b5') n += '<sup>(b5)</sup>';
+  else if (selectedFunc) n += selectedFunc;
   if (selectedTensions.length) n += '<sup>(' + selectedTensions.join(',') + ')</sup>';
   if (selectedBass) n += '/' + selectedBass;
   return n;
@@ -291,10 +293,16 @@ function drawCanvas(c, ratio) {
   const sY    = bY - Math.round(32 * ratio);
 
   let cx = tl;
-  const base = selectedRoot + selectedTriad + selectedSeventh + selectedFunc;
+  const base = selectedRoot + selectedTriad + selectedSeventh + (selectedFunc === 'b5' ? '' : selectedFunc);
   c.font = `400 ${bSize}px "Times New Roman", serif`;
   c.fillText(base, cx, bY);
   cx += c.measureText(base).width;
+
+  if (selectedFunc === 'b5') {
+    c.font = `400 ${sSize}px "Times New Roman", serif`;
+    c.fillText('(b5)', cx, sY);
+    cx += c.measureText('(b5)').width;
+  }
 
   if (selectedTensions.length) {
     const ts = '(' + selectedTensions.join(',') + ')';
