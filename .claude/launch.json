@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Chorditor (루트 개발용)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", ".", "--listen", "3000", "--no-clipboard"],
+      "port": 3000
+    },
+    {
+      "name": "Chorditor www (Capacitor 빌드 확인용)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "www", "--listen", "3001", "--no-clipboard"],
+      "port": 3001
+    }
+  ]
+}
