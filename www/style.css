@@ -586,33 +586,77 @@ canvas {
 
 .project-sticky-bar {
   width: 100%;
+  max-width: 100%;
   flex-shrink: 0;
   background: var(--bg);
   z-index: 20;
   padding: 20px 40px 0;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .project-header {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.project-header-row1 {
+  display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.project-header-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.project-header-row2 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.project-header-row2-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .project-name-input {
   font-family: 'Pretendard', sans-serif;
-  font-size: 22px;
+  font-size: 18px;
   border: none;
   border-bottom: 1px solid transparent;
+  flex: 1;
+  min-width: 60px;
   background: transparent;
   color: var(--text-primary);
   outline: none;
-  flex: 1;
-  min-width: 160px;
   padding: 2px 4px;
   transition: border-color .15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .project-name-input:focus { border-bottom-color: var(--border); }
 .project-name-input::placeholder { color: var(--text-muted); }
@@ -620,28 +664,29 @@ canvas {
 .back-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 13px;
-  padding: 6px 10px;
+  font-size: 12px;
+  padding: 4px 8px;
   border-radius: var(--radius);
   transition: all .15s;
 }
 .back-btn:hover { background: var(--bg); color: var(--text-primary); }
-.back-btn svg { width: 16px; height: 16px; }
+.back-btn svg { width: 14px; height: 14px; }
 
 .col-toggle {
   display: flex;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  flex-shrink: 0;
 }
 .col-toggle-btn {
-  font-size: 12px;
-  padding: 5px 14px;
+  font-size: 11px;
+  padding: 4px 12px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -658,24 +703,24 @@ canvas {
 .capo-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px 10px;
+  padding: 3px 8px;
 }
 .capo-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   font-family: 'Pretendard', sans-serif;
 }
 .capo-btn {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -685,10 +730,10 @@ canvas {
 }
 .capo-btn:hover { background: var(--bg); }
 .capo-value {
-  font-size: 13px;
+  font-size: 11px;
   font-family: 'Pretendard', sans-serif;
   color: var(--text-primary);
-  min-width: 16px;
+  min-width: 14px;
   text-align: center;
 }
 .capo-badge {
@@ -705,19 +750,19 @@ canvas {
 .bpm-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px 10px;
+  padding: 3px 8px;
 }
 .bpm-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   font-family: 'Pretendard', sans-serif;
 }
 .bpm-input {
-  width: 48px;
-  font-size: 13px;
+  width: 38px;
+  font-size: 11px;
   font-family: 'Pretendard', sans-serif;
   color: var(--text-primary);
   background: transparent;
@@ -734,8 +779,8 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-radius: 50%;
   background: transparent;
@@ -750,15 +795,15 @@ canvas {
   color: var(--surface);
   border-color: var(--text-primary);
 }
-.metronome-btn i { width: 16px; height: 16px; }
+.metronome-btn i { width: 13px; height: 13px; }
 
 /* 전체재생 버튼 */
 .play-all-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-radius: 50%;
   background: var(--text-primary);
@@ -768,7 +813,7 @@ canvas {
   transition: opacity .15s;
 }
 .play-all-btn:hover { opacity: .75; }
-.play-all-btn i { width: 16px; height: 16px; }
+.play-all-btn i { width: 13px; height: 13px; }
 
 /* 전체재생 중 현재 슬롯 강조 */
 .chord-slot--playing {
@@ -1103,13 +1148,9 @@ canvas {
     padding: 20px 18px;
   }
 
-  .col-toggle {
-    display: none;
-  }
-
   .project-header {
     flex-wrap: wrap;
-    padding-top: 20px;
+    padding-top: 4px;
   }
 
   .slot-grid.cols-8 {
@@ -1149,8 +1190,9 @@ canvas {
     justify-content: stretch;
   }
 
+  /* 8칸 모드: 세로모드 기본값 = 4+4 (2행×4열) */
   .chord-area.cols-8 {
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     justify-content: stretch;
   }
 
@@ -1161,9 +1203,52 @@ canvas {
     aspect-ratio: 4 / 3;
   }
 
+  .col-toggle-btn {
+    padding: 5px 10px;
+  }
+
+  .project-header-btn {
+    padding: 5px 10px;
+  }
+
+  /* 코드 목록 썸네일: 세로모드 4개 */
+  .project-sticky-bar {
+    padding: 12px 10px 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg);
+  }
+
+  .chord-thumb {
+    width: calc((100% - 3 * 8px) / 4);
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .chord-thumb canvas,
+  .chord-thumb img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chord-thumb-add {
+    width: calc((100% - 3 * 8px) / 4);
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
   .modal {
     max-width: 100%;
     margin: 0 8px;
+  }
+}
+
+/* 모바일/태블릿 가로모드: 8칸은 1행×8열 */
+@media (max-width: 1400px) and (orientation: landscape) {
+  .chord-area.cols-8 {
+    grid-template-columns: repeat(8, 1fr);
+    justify-content: stretch;
   }
 }
 
@@ -1213,13 +1298,17 @@ canvas {
   }
 
   .project-header {
-    padding-top: 20px;
+    padding-top: 4px;
     flex-wrap: wrap;
   }
 
   /* 코드 목록 썸네일: 한 행에 8개 */
   .project-sticky-bar {
     padding: 12px 10px 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg);
   }
 
   .chord-thumb {

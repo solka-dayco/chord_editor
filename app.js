@@ -178,7 +178,6 @@ function updateChordDisplay() {
   const el = document.getElementById('chord-display');
   if (el) el.innerHTML = buildChordHTML();
   draw();
-  populateProjectSelect();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -219,6 +218,10 @@ function selectFinger(n) {
 }
 
 function resetAll() {
+  // 프로젝트 선택값 보존
+  const projectSelect = document.getElementById('add-project-select');
+  const savedProject  = projectSelect?.value ?? '';
+
   dots        = [{s:1,f:2,n:1},{s:2,f:2,n:2},{s:3,f:2,n:3}];
   barreActive = {};
   openMute    = ['open','open','open','open','open','mute'];
@@ -243,6 +246,10 @@ function resetAll() {
   if (fretDisplay) fretDisplay.textContent = '2';
   updateChordDisplay();
   draw();
+
+  // 프로젝트 선택값 복원
+  if (savedProject) userSelectedProjectId = savedProject;
+  if (projectSelect && savedProject) projectSelect.value = savedProject;
 }
 
 function getBarreFrets() {
@@ -421,7 +428,9 @@ function updateBarreBtns() {
   const container = document.getElementById('barre-btns');
   if (!container) return;
   container.innerHTML = '';
+  let needsRedraw = false;
   getBarreFrets().forEach(f => {
+    if (barreActive[f] === undefined) { barreActive[f] = true; needsRedraw = true; }
     const btn = document.createElement('button');
     btn.textContent = 'B';
     const left = TL() + (f - 0.5) * FW() - 12;
@@ -435,6 +444,7 @@ function updateBarreBtns() {
     btn.onclick = () => { barreActive[f] = !barreActive[f]; draw(); };
     container.appendChild(btn);
   });
+  if (needsRedraw) drawCanvas(ctx, RATIO);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -578,13 +588,19 @@ async function playChord(chord) {
   activeSources.forEach(s => { try { s.stop(); } catch(e) {} });
   activeSources = [];
   const notes = [];
+  const fretBase = chord.fretNumber >= 2 ? chord.fretNumber - 2 : 0;
+  const capoOffset = getProject(currentProjectId)?.capo ?? 0;
+  const barreMap = buildBarreMap(chord.dots, chord.barre || {});
   for (let s = 0; s < STRINGS; s++) {
     if (chord.openMute[s] === 'mute') continue;
     const dot = chord.dots.find(d => d.s === s);
-    const fretBase = chord.fretNumber >= 2 ? chord.fretNumber - 2 : 0;
-    const capoOffset = getProject(currentProjectId)?.capo ?? 0;
-    const midi = OPEN_MIDI[s] + (dot ? fretBase + dot.f : 0) + capoOffset;
-    notes.push({ s, midi });
+    let fret = 0;
+    if (dot) {
+      fret = fretBase + dot.f;
+    } else if (barreMap[s] !== undefined) {
+      fret = fretBase + barreMap[s];
+    }
+    notes.push({ s, midi: OPEN_MIDI[s] + fret + capoOffset });
   }
   const sorted = notes.sort((a, b) => b.s - a.s);
   if (!sorted.length) return;
@@ -637,13 +653,34 @@ function calcActualFret(f) {
   return (currentFretNumber - 2) + f;
 }
 
+// 활성 바레가 커버하는 줄→바레프렛 맵 생성
+function buildBarreMap(dotList, barre) {
+  const count = {};
+  dotList.forEach(d => { count[d.f] = (count[d.f] || 0) + 1; });
+  const map = {};
+  Object.keys(count).filter(f => count[f] >= 2 && barre[Number(f)]).forEach(f => {
+    const fNum = Number(f);
+    const same = dotList.filter(d => d.f === fNum);
+    const minS = Math.min(...same.map(d => d.s));
+    const maxS = Math.max(...same.map(d => d.s));
+    for (let s = minS; s <= maxS; s++) map[s] = fNum;
+  });
+  return map;
+}
+
 function calcStringNotes() {
   const notes = [];
+  const barreMap = buildBarreMap(dots, barreActive);
   for (let s = 0; s < STRINGS; s++) {
     if (openMute[s] === 'mute') continue;
     const dot = dots.find(d => d.s === s);
-    const midi = OPEN_MIDI[s] + (dot ? calcActualFret(dot.f) : 0);
-    notes.push({ s, midi });
+    let fret = 0;
+    if (dot) {
+      fret = calcActualFret(dot.f);
+    } else if (barreMap[s] !== undefined) {
+      fret = calcActualFret(barreMap[s]);
+    }
+    notes.push({ s, midi: OPEN_MIDI[s] + fret });
   }
   return notes;
 }
@@ -760,11 +797,17 @@ function navigateTo(view, projectId) {
     populateProjectSelect();
     closeSidebar();
     resizeCanvas();
+    if (isMobileOrTablet() && screen.orientation?.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
   } else if (view === 'project' && projectId) {
     contextProjectId = null;
     isEditMode = false;
     renderProjectView(projectId);
     closeSidebar();
+    if (screen.orientation?.unlock) {
+      try { screen.orientation.unlock(); } catch(e) {}
+    }
   }
   renderSidebar();
 }
@@ -956,9 +999,15 @@ function promptCreateProject() {
 // ═══════════════════════════════════════════════════════════════
 // 에디터 → 프로젝트에 추가
 // ═══════════════════════════════════════════════════════════════
+let userSelectedProjectId = null;
+
 function populateProjectSelect() {
   const select = document.getElementById('add-project-select');
   if (!select) return;
+  if (!select._changeTracked) {
+    select.addEventListener('change', () => { userSelectedProjectId = select.value || null; });
+    select._changeTracked = true;
+  }
   const projects = loadProjects();
   select.innerHTML = '<option value="">프로젝트 선택</option>';
   projects.forEach(p => {
@@ -967,7 +1016,8 @@ function populateProjectSelect() {
     opt.textContent = p.name;
     select.appendChild(opt);
   });
-  if (contextProjectId) select.value = contextProjectId;
+  const restoreId = contextProjectId || userSelectedProjectId;
+  if (restoreId) select.value = restoreId;
 }
 
 function getCurrentChordState() {
@@ -1213,8 +1263,7 @@ function renderProjectView(projectId) {
   });
   if (migrated) updateProject(project);
 
-  // colCount: 모바일/태블릿은 orientation 기준, 데스크톱은 저장값
-  currentColCount = isMobileOrTablet() ? getOrientationColCount() : (project.colCount || 4);
+  currentColCount = project.colCount || 4;
 
   const viewEl = document.getElementById('view-project');
   viewEl.innerHTML = '';
@@ -1250,68 +1299,68 @@ function renderProjectView(projectId) {
 
   // 편집/완료 토글 버튼
   const modeBtn = document.createElement('button');
-  modeBtn.className = isEditMode ? 'btn btn-secondary' : 'btn btn-primary';
-  modeBtn.style.fontSize = '12px';
-  modeBtn.style.padding = '6px 14px';
+  modeBtn.className = (isEditMode ? 'btn btn-secondary' : 'btn btn-primary') + ' project-header-btn';
   modeBtn.textContent = isEditMode ? '완료' : '편집';
   modeBtn.onclick = () => {
     isEditMode = !isEditMode;
     renderProjectView(projectId);
   };
 
-  header.appendChild(backBtn);
-  header.appendChild(nameInput);
+  // 4칸/8칸 토글
+  const colToggle = document.createElement('div');
+  colToggle.className = 'col-toggle';
+  [4, 8].forEach(n => {
+    const btn = document.createElement('button');
+    btn.className = 'col-toggle-btn' + (currentColCount === n ? ' active' : '');
+    btn.textContent = n + '칸';
+    btn.onclick = () => {
+      currentColCount = n;
+      const p = getProject(projectId);
+      if (p) { p.colCount = n; updateProject(p); }
+      renderProjectView(projectId);
+    };
+    colToggle.appendChild(btn);
+  });
 
+  // ── 1행: 뒤로 | 제목 | 4칸/8칸 | 완료/편집 | [삭제] ──
+  const headerRow1 = document.createElement('div');
+  headerRow1.className = 'project-header-row1';
+  headerRow1.appendChild(backBtn);
+  headerRow1.appendChild(nameInput);
+  headerRow1.appendChild(colToggle);
+  headerRow1.appendChild(modeBtn);
   if (isEditMode) {
-    const colToggle = document.createElement('div');
-    colToggle.className = 'col-toggle';
-    [4, 8].forEach(n => {
-      const btn = document.createElement('button');
-      btn.className = 'col-toggle-btn' + (currentColCount === n ? ' active' : '');
-      btn.textContent = n + '칸';
-      btn.onclick = () => {
-        currentColCount = n;
-        const p = getProject(projectId);
-        if (p) { p.colCount = n; updateProject(p); }
-        renderProjectView(projectId);
-      };
-      colToggle.appendChild(btn);
-    });
-
     const deleteProjectBtn = document.createElement('button');
-    deleteProjectBtn.className = 'btn btn-danger';
-    deleteProjectBtn.style.fontSize = '12px';
-    deleteProjectBtn.style.padding = '6px 14px';
-    deleteProjectBtn.textContent = '프로젝트 삭제';
+    deleteProjectBtn.className = 'btn btn-danger project-header-btn';
+    deleteProjectBtn.textContent = '삭제';
     deleteProjectBtn.onclick = () => deleteProject(projectId);
-
-    header.appendChild(colToggle);
-    header.appendChild(modeBtn);
-    header.appendChild(deleteProjectBtn);
-  } else {
-    header.appendChild(modeBtn);
+    headerRow1.appendChild(deleteProjectBtn);
   }
+  header.appendChild(headerRow1);
 
-  // 카포 컨트롤 (편집/보기 모드 공통)
+  // ── 2행: [Capo BPM 메트로놈 재생 오른쪽] ──
+  const headerRow2 = document.createElement('div');
+  headerRow2.className = 'project-header-row2';
+
+  // 오른쪽 컨트롤 그룹
+  const row2Controls = document.createElement('div');
+  row2Controls.className = 'project-header-row2-controls';
+
+  // 카포 컨트롤
   const capoWrap = document.createElement('div');
   capoWrap.className = 'capo-control';
-
   const capoLabel = document.createElement('span');
   capoLabel.className = 'capo-label';
   capoLabel.textContent = 'Capo';
-
   const capoDown = document.createElement('button');
   capoDown.className = 'capo-btn';
   capoDown.textContent = '−';
-
   const capoVal = document.createElement('span');
   capoVal.className = 'capo-value';
   capoVal.textContent = project.capo ?? 0;
-
   const capoUp = document.createElement('button');
   capoUp.className = 'capo-btn';
   capoUp.textContent = '+';
-
   capoDown.onclick = () => {
     const p = getProject(projectId);
     if (p && (p.capo ?? 0) > 0) { p.capo = (p.capo ?? 0) - 1; updateProject(p); capoVal.textContent = p.capo; }
@@ -1321,7 +1370,7 @@ function renderProjectView(projectId) {
     if (p && (p.capo ?? 0) < 12) { p.capo = (p.capo ?? 0) + 1; updateProject(p); capoVal.textContent = p.capo; }
   };
   capoWrap.append(capoLabel, capoDown, capoVal, capoUp);
-  header.appendChild(capoWrap);
+  row2Controls.appendChild(capoWrap);
 
   // BPM 컨트롤
   const bpmWrap = document.createElement('div');
@@ -1341,7 +1390,7 @@ function renderProjectView(projectId) {
     if (p) { p.bpm = val; updateProject(p); }
   });
   bpmWrap.append(bpmLabel, bpmInput);
-  header.appendChild(bpmWrap);
+  row2Controls.appendChild(bpmWrap);
 
   // 메트로놈 버튼
   const metronomeBtn = document.createElement('button');
@@ -1350,15 +1399,18 @@ function renderProjectView(projectId) {
   metronomeBtn.innerHTML = '<i data-lucide="timer"></i>';
   metronomeBtn.title = '메트로놈';
   metronomeBtn.onclick = () => toggleMetronome();
-  header.appendChild(metronomeBtn);
+  row2Controls.appendChild(metronomeBtn);
 
   // 전체재생 버튼
   const playAllBtn = document.createElement('button');
   playAllBtn.id = 'play-all-btn';
   playAllBtn.className = 'btn play-all-btn';
-  playAllBtn.innerHTML = '<i data-lucide="play"></i>';
+  playAllBtn.innerHTML = playbackActive ? '<i data-lucide="square"></i>' : '<i data-lucide="play"></i>';
   playAllBtn.onclick = () => { if (playbackActive) stopPlayAll(); else playAll(projectId); };
-  header.appendChild(playAllBtn);
+  row2Controls.appendChild(playAllBtn);
+
+  headerRow2.appendChild(row2Controls);
+  header.appendChild(headerRow2);
 
   // ── 고정 헤더 영역 ──
   const thumbList = buildThumbList(project, isEditMode);
@@ -2266,7 +2318,6 @@ function setupOrientationListener() {
   const handler = () => {
     if (!isMobileOrTablet()) return;
     if (currentProjectId && !document.getElementById('view-project').classList.contains('hidden')) {
-      currentColCount = mq.matches ? 4 : 8;
       renderProjectView(currentProjectId);
     }
   };
