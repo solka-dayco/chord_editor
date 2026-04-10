@@ -1068,7 +1068,7 @@ canvas {
 }
 
 /* ── 반응형: 모바일 ── */
-@media (max-width: 768px) {
+@media (max-width: 1400px) {
   .hamburger {
     display: flex;
   }
@@ -1107,12 +1107,76 @@ canvas {
     display: none;
   }
 
-  .project-header {
-    flex-wrap: wrap;
-  }
-
   .slot-grid.cols-8 {
     grid-template-columns: repeat(4, 1fr);
+  }
+
+  #view-project {
+    padding: 60px 0 40px;
+  }
+
+  #view-project .card {
+    padding: 16px 10px;
+  }
+
+  .project-view-wrapper {
+    padding: 0 10px;
+  }
+
+  .project-view {
+    max-width: 100%;
+  }
+
+  .project-lines {
+    font-size: 14px;
+  }
+
+  .project-line {
+    font-size: 14px;
+  }
+
+  .row-textarea {
+    font-size: 14px;
+  }
+
+  .chord-area.cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+    justify-content: stretch;
+  }
+
+  .chord-area.cols-8 {
+    grid-template-columns: repeat(8, 1fr);
+    justify-content: stretch;
+  }
+
+  .chord-area.cols-4 .chord-slot,
+  .chord-area.cols-8 .chord-slot {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  /* 코드 목록 썸네일: 세로모드 4개 */
+  .project-sticky-bar {
+    padding: 12px 10px 0;
+  }
+
+  .chord-thumb {
+    width: calc((100% - 3 * 8px) / 4);
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .chord-thumb canvas,
+  .chord-thumb img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chord-thumb-add {
+    width: calc((100% - 3 * 8px) / 4);
+    height: auto;
+    aspect-ratio: 4 / 3;
   }
 
   .modal {
@@ -1121,9 +1185,98 @@ canvas {
   }
 }
 
-@media (max-width: 768px) and (orientation: landscape) {
-  .slot-grid.cols-4,
-  .slot-grid.cols-8 {
+@media (max-height: 600px) and (orientation: landscape) {
+  /* 모바일 가로모드: 사이드바 항상 숨김 */
+  .hamburger {
+    display: flex;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    z-index: 250;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .app-wrapper {
+    flex-direction: column;
+  }
+
+  .main-area {
+    width: 100%;
+  }
+
+  /* 프로젝트 뷰 세로모드와 동일하게 꽉 채움 */
+  .view {
+    padding: 60px 0 40px;
+  }
+
+  .card {
+    padding: 16px 10px;
+  }
+
+  .project-view-wrapper {
+    padding: 0 10px;
+  }
+
+  .project-view {
+    max-width: 100%;
+  }
+
+  .project-header {
+    padding-top: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* 코드 목록 썸네일: 한 행에 8개 */
+  .project-sticky-bar {
+    padding: 12px 10px 0;
+  }
+
+  .chord-thumb {
+    width: calc((100% - 7 * 8px) / 8);
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .chord-thumb canvas,
+  .chord-thumb img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chord-thumb-add {
+    width: calc((100% - 7 * 8px) / 8);
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .chord-area.cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+    justify-content: stretch;
+  }
+
+  .chord-area.cols-8 {
     grid-template-columns: repeat(8, 1fr);
+    justify-content: stretch;
+  }
+
+  .chord-area.cols-4 .chord-slot,
+  .chord-area.cols-8 .chord-slot {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  .modal {
+    max-width: 100%;
+    margin: 0 8px;
   }
 }

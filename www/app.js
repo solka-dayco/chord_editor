@@ -677,6 +677,7 @@ updateChordDisplay();
 document.getElementById('finger-group').style.opacity = fingerNumMode ? '1' : '0.35';
 const _initFretDisplay = document.getElementById('fret-number-display');
 if (_initFretDisplay) _initFretDisplay.textContent = String(currentFretNumber);
+setupOrientationListener();
 
 // ═══════════════════════════════════════════════════════════════
 // localStorage 유틸리티
@@ -1212,8 +1213,8 @@ function renderProjectView(projectId) {
   });
   if (migrated) updateProject(project);
 
-  // colCount: 저장된 값 or 기본값 4
-  currentColCount = project.colCount || 4;
+  // colCount: 모바일/태블릿은 orientation 기준, 데스크톱은 저장값
+  currentColCount = isMobileOrTablet() ? getOrientationColCount() : (project.colCount || 4);
 
   const viewEl = document.getElementById('view-project');
   viewEl.innerHTML = '';
@@ -1381,9 +1382,6 @@ function renderProjectView(projectId) {
 
   linesEl.scrollTop = 0;
   linesEl.focus();
-
-  // orientation 감지
-  setupOrientationListener();
 }
 
 function getLineText(lineDiv) {
@@ -2255,15 +2253,21 @@ function deleteProject(projectId) {
 // ═══════════════════════════════════════════════════════════════
 // Orientation 감지
 // ═══════════════════════════════════════════════════════════════
+function isMobileOrTablet() {
+  return window.innerWidth <= 1400;
+}
+
+function getOrientationColCount() {
+  return window.matchMedia('(orientation: portrait)').matches ? 4 : 8;
+}
+
 function setupOrientationListener() {
   const mq = window.matchMedia('(orientation: portrait)');
   const handler = () => {
+    if (!isMobileOrTablet()) return;
     if (currentProjectId && !document.getElementById('view-project').classList.contains('hidden')) {
-      const p = getProject(currentProjectId);
-      if (p && !p.colCount) {
-        currentColCount = mq.matches ? 4 : 8;
-        renderProjectView(currentProjectId);
-      }
+      currentColCount = mq.matches ? 4 : 8;
+      renderProjectView(currentProjectId);
     }
   };
   try { mq.addEventListener('change', handler); } catch(e) { mq.addListener(handler); }
