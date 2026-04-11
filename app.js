@@ -532,7 +532,7 @@ async function savePNG() {
           const created = newAlbums.find(a => a.name === 'Chorditor');
           if (created) albumId = created.identifier;
         }
-      } catch(e) { console.log('앨범 처리 실패:', e); }
+      } catch(e) { /* 앨범 처리 실패 시 앨범 없이 저장 */ }
       const saveOpts = { path: tempResult.uri };
       if (albumId) saveOpts.albumIdentifier = albumId;
       await Media.savePhoto(saveOpts);
@@ -712,8 +712,8 @@ renderRootBtns();
 renderBassBtns();
 updateChordDisplay();
 document.getElementById('finger-group').style.opacity = fingerNumMode ? '1' : '0.35';
-const _initFretDisplay = document.getElementById('fret-number-display');
-if (_initFretDisplay) _initFretDisplay.textContent = String(currentFretNumber);
+const _fd = document.getElementById('fret-number-display');
+if (_fd) _fd.textContent = String(currentFretNumber);
 setupOrientationListener();
 
 // ═══════════════════════════════════════════════════════════════
@@ -1064,7 +1064,6 @@ function addCurrentChordToProject() {
 // 프로젝트 뷰 렌더링
 // ═══════════════════════════════════════════════════════════════
 let currentColCount  = 4;
-const rowObservers = new Map();
 let playbackActive = false;
 let currentPlayTimeout = null;
 let metronomeActive = false;
@@ -2037,187 +2036,6 @@ function setupSlotTouchHold(slot) {
   slot.addEventListener('touchcancel', cancel);
 }
 
-function buildRowsSection(project) {
-  const rowsEl = document.createElement('div');
-  rowsEl.className = 'project-rows';
-  rowsEl.id = 'project-rows-' + project.id;
-
-  (project.arrangement || []).forEach(row => {
-    const rowEl = buildRowEl(row, project.id, project.chords);
-    rowsEl.appendChild(rowEl);
-  });
-
-  return rowsEl;
-}
-
-function buildRowEl(row, projectId, chords) {
-  const rowEl = document.createElement('div');
-  rowEl.className = 'project-row';
-  rowEl.dataset.rowId = row.id;
-
-  // 코드 이미지 스트립 (채워진 슬롯만 표시)
-  const strip = document.createElement('div');
-  strip.className = 'chord-images-strip';
-  strip.dataset.rowId = row.id;
-
-  const filledSlots = (row.slots || [])
-    .map((chordId, idx) => ({ chordId, idx }))
-    .filter(x => x.chordId);
-
-  if (filledSlots.length === 0) strip.classList.add('empty');
-
-  filledSlots.forEach(({ chordId, idx: slotIdx }) => {
-    const chord = chords.find(c => c.id === chordId);
-    if (!chord) return;
-    const cv = document.createElement('canvas');
-    cv.width = 400; cv.height = 300;
-    drawCanvas(cv.getContext('2d'), 1, chord);
-    const img = document.createElement('img');
-    img.src = cv.toDataURL('image/png');
-    img.className = 'chord-slot-img';
-    img.addEventListener('click', () => openViewModal(chord, projectId));
-    img.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      placeChordInSlot(projectId, row.id, slotIdx, null);
-    });
-    strip.appendChild(img);
-  });
-
-  // 드래그 오버 / 드롭 (스트립 전체가 드롭 대상)
-  strip.addEventListener('dragover', e => { e.preventDefault(); strip.classList.add('drag-over'); });
-  strip.addEventListener('dragleave', () => strip.classList.remove('drag-over'));
-  strip.addEventListener('drop', e => {
-    e.preventDefault();
-    strip.classList.remove('drag-over');
-    const droppedChordId = e.dataTransfer.getData('chord-thumb-id');
-    const fromProject = e.dataTransfer.getData('chord-thumb-project');
-    if (droppedChordId && fromProject === projectId) {
-      const firstEmptyIdx = (row.slots || []).findIndex(s => !s);
-      if (firstEmptyIdx !== -1) {
-        placeChordInSlot(projectId, row.id, firstEmptyIdx, droppedChordId);
-      }
-    }
-  });
-
-  // textarea (메모장 방식)
-  const textarea = document.createElement('textarea');
-  textarea.className = 'row-textarea';
-  textarea.value = row.text || '';
-
-  let taDebounce = null;
-  textarea.addEventListener('input', () => {
-    autoResizeTextarea(textarea);
-    clearTimeout(taDebounce);
-    taDebounce = setTimeout(() => {
-      const p = getProject(projectId);
-      if (!p) return;
-      const r = p.arrangement.find(x => x.id === row.id);
-      if (r) { r.text = textarea.value; p.updatedAt = Date.now(); updateProject(p); }
-    }, 500);
-  });
-
-  textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      addRow(projectId);
-    } else if (e.key === 'Backspace' && textarea.value === '') {
-      const p = getProject(projectId);
-      if (!p || p.arrangement.length <= 1) return;
-      e.preventDefault();
-      deleteRow(projectId, row.id);
-    }
-  });
-
-  textarea.addEventListener('paste', e => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text');
-    const lines = text.split('\n');
-    if (lines.length <= 1) {
-      textarea.value += text;
-      textarea.dispatchEvent(new Event('input'));
-      return;
-    }
-    textarea.value += lines[0];
-    textarea.dispatchEvent(new Event('input'));
-    const p = getProject(projectId);
-    if (!p) return;
-    const rowIdx = p.arrangement.findIndex(x => x.id === row.id);
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i]) continue;
-      if (rowIdx + i < p.arrangement.length) {
-        p.arrangement[rowIdx + i].text = lines[i];
-      } else {
-        p.arrangement.push(createNewRow(currentColCount, lines[i]));
-      }
-    }
-    p.updatedAt = Date.now();
-    updateProject(p);
-    renderProjectView(projectId);
-  });
-
-  rowEl.appendChild(strip);
-  rowEl.appendChild(textarea);
-  autoResizeTextarea(textarea);
-  rowEl.addEventListener('click', () => textarea.focus());
-
-  return rowEl;
-}
-
-function setupRowObserver() {
-  // img 기반으로 전환되어 더 이상 사용하지 않음
-}
-
-function autoResizeTextarea(el) {
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
-
-function createNewRow(colCount, text = '') {
-  return {
-    id: genId(),
-    slots: new Array(8).fill(null),
-    text: text
-  };
-}
-
-function addRow(projectId) {
-  const p = getProject(projectId);
-  if (!p) return;
-  const newRow = createNewRow(currentColCount);
-  p.arrangement.push(newRow);
-  p.updatedAt = Date.now();
-  updateProject(p);
-  // 전체 리렌더 대신 DOM에 직접 추가
-  const rowsEl = document.getElementById('project-rows-' + projectId);
-  if (rowsEl) {
-    const rowEl = buildRowEl(newRow, projectId, p.chords);
-    rowsEl.appendChild(rowEl);
-    const ta = rowEl.querySelector('.row-textarea');
-    if (ta) ta.focus();
-  } else {
-    renderProjectView(projectId);
-  }
-}
-
-function deleteRow(projectId, rowId) {
-  const p = getProject(projectId);
-  if (!p || p.arrangement.length <= 1) return;
-  const idx = p.arrangement.findIndex(r => r.id === rowId);
-  if (idx === -1) return;
-  p.arrangement.splice(idx, 1);
-  p.updatedAt = Date.now();
-  updateProject(p);
-  const rowEl = document.querySelector(`.project-row[data-row-id="${rowId}"]`);
-  if (rowEl) {
-    const prevRow = rowEl.previousElementSibling;
-    rowEl.remove();
-    if (prevRow) {
-      const ta = prevRow.querySelector('.row-textarea');
-      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    }
-  }
-}
-
 function placeChordInSlot(projectId, rowId, slotIdx, chordId) {
   const p = getProject(projectId);
   if (!p) return;
@@ -2307,10 +2125,6 @@ function deleteProject(projectId) {
 // ═══════════════════════════════════════════════════════════════
 function isMobileOrTablet() {
   return window.innerWidth <= 1400;
-}
-
-function getOrientationColCount() {
-  return window.matchMedia('(orientation: portrait)').matches ? 4 : 8;
 }
 
 function setupOrientationListener() {
@@ -2808,8 +2622,6 @@ function meDraw() {
     openMute: me_openMute, fingerNumMode: me_fingerNumMode,
     fretNumber: me_fretNumber
   };
-  // 루트모드 반영
-  const savedRoot = rootMode, savedRootIdx = rootIndex;
   drawCanvas(c, me_RATIO, data);
   meUpdateBarreBtns();
 }
