@@ -1688,31 +1688,86 @@ function buildLinesSection(project, editMode = true) {
     saveAllLines(project.id, linesEl);
   }
 
-  linesEl.addEventListener('paste', e => {
-    e.preventDefault();
+  linesEl.addEventListener('paste', async e => {
     const cd = e.clipboardData || window.clipboardData;
-    const pasted = cd.getData('text/plain') || cd.getData('text');
-    if (!pasted) return;
-    applyPastedText(pasted, null);
+    let pasted = cd?.getData('text/plain') || cd?.getData('text') || '';
+
+    if (pasted) {
+      e.preventDefault();
+      applyPastedText(pasted, null);
+      return;
+    }
+
+    // iOS Safari: clipboardData가 비어있을 때 async API 시도
+    if (navigator.clipboard?.readText) {
+      e.preventDefault();
+      try {
+        pasted = await navigator.clipboard.readText();
+        if (pasted) applyPastedText(pasted, null);
+      } catch {
+        // 권한 거부 등 — 브라우저 기본 동작이 이미 막혔으므로 input 이벤트 대기
+      }
+    }
+    // else: 브라우저 기본 붙여넣기 허용, input 이벤트에서 처리
   });
 
-  // Android 가상 키보드: paste가 input 이벤트로 오는 경우 처리
+  // 브라우저가 DOM에 직접 삽입한 경우 처리 (Android/iOS 폴백)
   linesEl.addEventListener('input', e => {
     if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromPasteAsQuotation') return;
-    // 브라우저가 이미 DOM에 삽입했으므로 현재 라인 내용에서 줄바꿈 추출
     let line = lastFocusedLine;
     if (!line) return;
-    const raw = line.textContent || '';
-    if (!/[\r\n]/.test(raw)) return; // 줄바꿈 없으면 패스
-    // 줄바꿈이 포함된 경우 분리해서 재삽입
-    const beforeChordArea = line.querySelector('.chord-area');
-    const chordAreaHtml = beforeChordArea ? beforeChordArea.outerHTML : '';
-    // 텍스트 노드에서 실제 텍스트만 추출
-    const textNodes = Array.from(line.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
-    const fullText = textNodes.map(n => n.textContent).join('');
-    if (!/[\r\n]/.test(fullText)) return;
-    setLineText(line, '');
-    applyPastedText(fullText, line);
+
+    // <br> 태그나 중첩 <div>로 삽입된 줄바꿈 감지 (textContent에는 안 보임)
+    const hasBr = !!line.querySelector('br');
+    const hasNestedDiv = !!line.querySelector('div:not(.chord-area):not(.chord-slot)');
+    const hasTextBreak = /[\r\n]/.test(line.textContent || '');
+    if (!hasBr && !hasNestedDiv && !hasTextBreak) return;
+
+    // HTML 구조에서 <br>/<div>를 줄바꿈으로 취급해 세그먼트 추출
+    const chordArea = line.querySelector('.chord-area');
+    const segments = [];
+    let current = '';
+
+    const walk = (node) => {
+      if (node === chordArea) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        current += node.textContent.replace(/[\r\n]/g, '');
+      } else if (node.nodeName === 'BR') {
+        segments.push(current); current = '';
+      } else if (node.nodeName === 'DIV' && !node.classList.contains('chord-area') && !node.classList.contains('chord-slot')) {
+        if (current || segments.length > 0) { segments.push(current); current = ''; }
+        for (const c of node.childNodes) walk(c);
+      } else {
+        for (const c of node.childNodes) walk(c);
+      }
+    };
+
+    for (const c of line.childNodes) walk(c);
+    segments.push(current);
+
+    if (segments.length <= 1) return;
+
+    setLineText(line, segments[0]);
+    let lastLine = line;
+    const p = getProject(project.id);
+    for (let i = 1; i < segments.length; i++) {
+      const newLineId = genId();
+      const newLineData = { id: newLineId, text: segments[i], slots: new Array(8).fill(null) };
+      const newDiv = document.createElement('div');
+      newDiv.className = 'project-line';
+      newDiv.dataset.lineId = newLineId;
+      newDiv.appendChild(buildChordArea(newLineData, p || project));
+      newDiv.appendChild(document.createTextNode(segments[i]));
+      lastLine.insertAdjacentElement('afterend', newDiv);
+      lastLine = newDiv;
+    }
+
+    const sel = window.getSelection();
+    const endRange = document.createRange();
+    endRange.selectNodeContents(lastLine);
+    endRange.collapse(false);
+    if (sel) { sel.removeAllRanges(); sel.addRange(endRange); }
+    saveAllLines(project.id, linesEl);
   });
 
   return linesEl;
