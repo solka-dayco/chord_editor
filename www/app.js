@@ -532,7 +532,7 @@ async function savePNG() {
           const created = newAlbums.find(a => a.name === 'Chorditor');
           if (created) albumId = created.identifier;
         }
-      } catch(e) { console.log('앨범 처리 실패:', e); }
+      } catch(e) { /* 앨범 처리 실패 시 앨범 없이 저장 */ }
       const saveOpts = { path: tempResult.uri };
       if (albumId) saveOpts.albumIdentifier = albumId;
       await Media.savePhoto(saveOpts);
@@ -712,8 +712,8 @@ renderRootBtns();
 renderBassBtns();
 updateChordDisplay();
 document.getElementById('finger-group').style.opacity = fingerNumMode ? '1' : '0.35';
-const _initFretDisplay = document.getElementById('fret-number-display');
-if (_initFretDisplay) _initFretDisplay.textContent = String(currentFretNumber);
+const _fd = document.getElementById('fret-number-display');
+if (_fd) _fd.textContent = String(currentFretNumber);
 setupOrientationListener();
 
 // ═══════════════════════════════════════════════════════════════
@@ -1064,7 +1064,6 @@ function addCurrentChordToProject() {
 // 프로젝트 뷰 렌더링
 // ═══════════════════════════════════════════════════════════════
 let currentColCount  = 4;
-const rowObservers = new Map();
 let playbackActive = false;
 let currentPlayTimeout = null;
 let metronomeActive = false;
@@ -1623,26 +1622,50 @@ function buildLinesSection(project, editMode = true) {
     });
   }
 
-  linesEl.addEventListener('paste', e => {
-    e.preventDefault();
-    const pasted = (e.clipboardData || window.clipboardData).getData('text');
-    const segments = pasted.split('\n');
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    let currentLine = range.startContainer;
-    while (currentLine && currentLine !== linesEl) {
-      if (currentLine.classList?.contains('project-line')) break;
-      currentLine = currentLine.parentElement;
+  // 마지막 포커스된 라인 추적 (모바일 selection 복원용)
+  let lastFocusedLine = null;
+  linesEl.addEventListener('focusin', e => {
+    let t = e.target;
+    while (t && t !== linesEl) {
+      if (t.classList?.contains('project-line')) { lastFocusedLine = t; break; }
+      t = t.parentElement;
     }
-    if (!currentLine || currentLine === linesEl) return;
-    const cursorOff = getCursorOffsetInLine(currentLine, range);
-    const fullText = getLineText(currentLine);
-    const before = fullText.substring(0, cursorOff);
-    const after = fullText.substring(cursorOff);
-    setLineText(currentLine, before + segments[0]);
+  });
+
+  function applyPastedText(pasted, anchorLine) {
+    // 줄바꿈 정규화: \r\n, \r, \n 모두 처리
+    const segments = pasted.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const sel = window.getSelection();
+    let currentLine = null;
+    let cursorOff = 0;
+    let before = '', after = '';
+
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      let node = range.startContainer;
+      while (node && node !== linesEl) {
+        if (node.classList?.contains('project-line')) { currentLine = node; break; }
+        node = node.parentElement;
+      }
+      if (currentLine) {
+        cursorOff = getCursorOffsetInLine(currentLine, range);
+        const fullText = getLineText(currentLine);
+        before = fullText.substring(0, cursorOff);
+        after = fullText.substring(cursorOff);
+      }
+    }
+
+    // selection이 없으면 마지막 포커스 라인 끝에 붙여넣기
+    if (!currentLine) {
+      currentLine = anchorLine || lastFocusedLine;
+      if (!currentLine) return;
+      before = getLineText(currentLine);
+      after = '';
+    }
+
     const p = getProject(project.id);
+    setLineText(currentLine, before + segments[0]);
     let lastLine = currentLine;
     for (let i = 1; i < segments.length; i++) {
       const text = i === segments.length - 1 ? segments[i] + after : segments[i];
@@ -1657,12 +1680,39 @@ function buildLinesSection(project, editMode = true) {
       lastLine = newDiv;
     }
     if (segments.length === 1) setLineText(currentLine, before + segments[0] + after);
+
     const endRange = document.createRange();
     endRange.selectNodeContents(lastLine);
     endRange.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(endRange);
+    if (sel) { sel.removeAllRanges(); sel.addRange(endRange); }
     saveAllLines(project.id, linesEl);
+  }
+
+  linesEl.addEventListener('paste', e => {
+    e.preventDefault();
+    const cd = e.clipboardData || window.clipboardData;
+    const pasted = cd.getData('text/plain') || cd.getData('text');
+    if (!pasted) return;
+    applyPastedText(pasted, null);
+  });
+
+  // Android 가상 키보드: paste가 input 이벤트로 오는 경우 처리
+  linesEl.addEventListener('input', e => {
+    if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromPasteAsQuotation') return;
+    // 브라우저가 이미 DOM에 삽입했으므로 현재 라인 내용에서 줄바꿈 추출
+    let line = lastFocusedLine;
+    if (!line) return;
+    const raw = line.textContent || '';
+    if (!/[\r\n]/.test(raw)) return; // 줄바꿈 없으면 패스
+    // 줄바꿈이 포함된 경우 분리해서 재삽입
+    const beforeChordArea = line.querySelector('.chord-area');
+    const chordAreaHtml = beforeChordArea ? beforeChordArea.outerHTML : '';
+    // 텍스트 노드에서 실제 텍스트만 추출
+    const textNodes = Array.from(line.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+    const fullText = textNodes.map(n => n.textContent).join('');
+    if (!/[\r\n]/.test(fullText)) return;
+    setLineText(line, '');
+    applyPastedText(fullText, line);
   });
 
   return linesEl;
@@ -2037,187 +2087,6 @@ function setupSlotTouchHold(slot) {
   slot.addEventListener('touchcancel', cancel);
 }
 
-function buildRowsSection(project) {
-  const rowsEl = document.createElement('div');
-  rowsEl.className = 'project-rows';
-  rowsEl.id = 'project-rows-' + project.id;
-
-  (project.arrangement || []).forEach(row => {
-    const rowEl = buildRowEl(row, project.id, project.chords);
-    rowsEl.appendChild(rowEl);
-  });
-
-  return rowsEl;
-}
-
-function buildRowEl(row, projectId, chords) {
-  const rowEl = document.createElement('div');
-  rowEl.className = 'project-row';
-  rowEl.dataset.rowId = row.id;
-
-  // 코드 이미지 스트립 (채워진 슬롯만 표시)
-  const strip = document.createElement('div');
-  strip.className = 'chord-images-strip';
-  strip.dataset.rowId = row.id;
-
-  const filledSlots = (row.slots || [])
-    .map((chordId, idx) => ({ chordId, idx }))
-    .filter(x => x.chordId);
-
-  if (filledSlots.length === 0) strip.classList.add('empty');
-
-  filledSlots.forEach(({ chordId, idx: slotIdx }) => {
-    const chord = chords.find(c => c.id === chordId);
-    if (!chord) return;
-    const cv = document.createElement('canvas');
-    cv.width = 400; cv.height = 300;
-    drawCanvas(cv.getContext('2d'), 1, chord);
-    const img = document.createElement('img');
-    img.src = cv.toDataURL('image/png');
-    img.className = 'chord-slot-img';
-    img.addEventListener('click', () => openViewModal(chord, projectId));
-    img.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      placeChordInSlot(projectId, row.id, slotIdx, null);
-    });
-    strip.appendChild(img);
-  });
-
-  // 드래그 오버 / 드롭 (스트립 전체가 드롭 대상)
-  strip.addEventListener('dragover', e => { e.preventDefault(); strip.classList.add('drag-over'); });
-  strip.addEventListener('dragleave', () => strip.classList.remove('drag-over'));
-  strip.addEventListener('drop', e => {
-    e.preventDefault();
-    strip.classList.remove('drag-over');
-    const droppedChordId = e.dataTransfer.getData('chord-thumb-id');
-    const fromProject = e.dataTransfer.getData('chord-thumb-project');
-    if (droppedChordId && fromProject === projectId) {
-      const firstEmptyIdx = (row.slots || []).findIndex(s => !s);
-      if (firstEmptyIdx !== -1) {
-        placeChordInSlot(projectId, row.id, firstEmptyIdx, droppedChordId);
-      }
-    }
-  });
-
-  // textarea (메모장 방식)
-  const textarea = document.createElement('textarea');
-  textarea.className = 'row-textarea';
-  textarea.value = row.text || '';
-
-  let taDebounce = null;
-  textarea.addEventListener('input', () => {
-    autoResizeTextarea(textarea);
-    clearTimeout(taDebounce);
-    taDebounce = setTimeout(() => {
-      const p = getProject(projectId);
-      if (!p) return;
-      const r = p.arrangement.find(x => x.id === row.id);
-      if (r) { r.text = textarea.value; p.updatedAt = Date.now(); updateProject(p); }
-    }, 500);
-  });
-
-  textarea.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      addRow(projectId);
-    } else if (e.key === 'Backspace' && textarea.value === '') {
-      const p = getProject(projectId);
-      if (!p || p.arrangement.length <= 1) return;
-      e.preventDefault();
-      deleteRow(projectId, row.id);
-    }
-  });
-
-  textarea.addEventListener('paste', e => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text');
-    const lines = text.split('\n');
-    if (lines.length <= 1) {
-      textarea.value += text;
-      textarea.dispatchEvent(new Event('input'));
-      return;
-    }
-    textarea.value += lines[0];
-    textarea.dispatchEvent(new Event('input'));
-    const p = getProject(projectId);
-    if (!p) return;
-    const rowIdx = p.arrangement.findIndex(x => x.id === row.id);
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i]) continue;
-      if (rowIdx + i < p.arrangement.length) {
-        p.arrangement[rowIdx + i].text = lines[i];
-      } else {
-        p.arrangement.push(createNewRow(currentColCount, lines[i]));
-      }
-    }
-    p.updatedAt = Date.now();
-    updateProject(p);
-    renderProjectView(projectId);
-  });
-
-  rowEl.appendChild(strip);
-  rowEl.appendChild(textarea);
-  autoResizeTextarea(textarea);
-  rowEl.addEventListener('click', () => textarea.focus());
-
-  return rowEl;
-}
-
-function setupRowObserver() {
-  // img 기반으로 전환되어 더 이상 사용하지 않음
-}
-
-function autoResizeTextarea(el) {
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
-
-function createNewRow(colCount, text = '') {
-  return {
-    id: genId(),
-    slots: new Array(8).fill(null),
-    text: text
-  };
-}
-
-function addRow(projectId) {
-  const p = getProject(projectId);
-  if (!p) return;
-  const newRow = createNewRow(currentColCount);
-  p.arrangement.push(newRow);
-  p.updatedAt = Date.now();
-  updateProject(p);
-  // 전체 리렌더 대신 DOM에 직접 추가
-  const rowsEl = document.getElementById('project-rows-' + projectId);
-  if (rowsEl) {
-    const rowEl = buildRowEl(newRow, projectId, p.chords);
-    rowsEl.appendChild(rowEl);
-    const ta = rowEl.querySelector('.row-textarea');
-    if (ta) ta.focus();
-  } else {
-    renderProjectView(projectId);
-  }
-}
-
-function deleteRow(projectId, rowId) {
-  const p = getProject(projectId);
-  if (!p || p.arrangement.length <= 1) return;
-  const idx = p.arrangement.findIndex(r => r.id === rowId);
-  if (idx === -1) return;
-  p.arrangement.splice(idx, 1);
-  p.updatedAt = Date.now();
-  updateProject(p);
-  const rowEl = document.querySelector(`.project-row[data-row-id="${rowId}"]`);
-  if (rowEl) {
-    const prevRow = rowEl.previousElementSibling;
-    rowEl.remove();
-    if (prevRow) {
-      const ta = prevRow.querySelector('.row-textarea');
-      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    }
-  }
-}
-
 function placeChordInSlot(projectId, rowId, slotIdx, chordId) {
   const p = getProject(projectId);
   if (!p) return;
@@ -2307,10 +2176,6 @@ function deleteProject(projectId) {
 // ═══════════════════════════════════════════════════════════════
 function isMobileOrTablet() {
   return window.innerWidth <= 1400;
-}
-
-function getOrientationColCount() {
-  return window.matchMedia('(orientation: portrait)').matches ? 4 : 8;
 }
 
 function setupOrientationListener() {
@@ -2808,8 +2673,6 @@ function meDraw() {
     openMute: me_openMute, fingerNumMode: me_fingerNumMode,
     fretNumber: me_fretNumber
   };
-  // 루트모드 반영
-  const savedRoot = rootMode, savedRootIdx = rootIndex;
   drawCanvas(c, me_RATIO, data);
   meUpdateBarreBtns();
 }
