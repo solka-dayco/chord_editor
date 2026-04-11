@@ -1740,6 +1740,8 @@ function buildLinesSection(project, editMode = true) {
   }
 
   linesEl.addEventListener('paste', async e => {
+    e.preventDefault(); // 항상 브라우저 기본 붙여넣기 차단
+
     // 비동기 전에 삽입 대상 라인을 동기적으로 캡처
     const sel = window.getSelection();
     let targetLine = null;
@@ -1765,22 +1767,17 @@ function buildLinesSection(project, editMode = true) {
     }
 
     if (pasted) {
-      e.preventDefault();
       applyPastedText(pasted, targetLine || lastFocusedLine);
       return;
     }
 
     // async Clipboard API (iOS Safari — clipboardData가 완전히 비어있는 경우)
     if (navigator.clipboard?.readText) {
-      e.preventDefault();
       try {
         pasted = await navigator.clipboard.readText();
         if (pasted) applyPastedText(pasted, targetLine || lastFocusedLine);
       } catch {}
-      return;
     }
-
-    // 최후 폴백: 브라우저 기본 붙여넣기 허용 → input 이벤트에서 처리
   });
 
   // 브라우저가 DOM에 직접 삽입한 경우 처리 (Android/iOS 폴백)
