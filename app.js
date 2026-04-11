@@ -1632,9 +1632,23 @@ function buildLinesSection(project, editMode = true) {
     }
   });
 
+  // 모바일: 길게 누르기로 컨텍스트 메뉴가 뜨면 focusin이 유실될 수 있어 touchstart로 보강
+  linesEl.addEventListener('touchstart', e => {
+    let t = e.target;
+    while (t && t !== linesEl) {
+      if (t.classList?.contains('project-line')) { lastFocusedLine = t; break; }
+      t = t.parentElement;
+    }
+  }, { passive: true });
+
   function applyPastedText(pasted, anchorLine) {
-    // 줄바꿈 정규화: \r\n, \r, \n 모두 처리
-    const segments = pasted.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    // 줄바꿈 정규화: \r\n, \r, \n 및 Unicode 줄/문단 구분자 처리
+    const segments = pasted
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\u2028/g, '\n')
+      .replace(/\u2029/g, '\n')
+      .split('\n');
     const sel = window.getSelection();
     let currentLine = null;
     let cursorOff = 0;
@@ -1659,6 +1673,19 @@ function buildLinesSection(project, editMode = true) {
     // selection이 없으면 마지막 포커스 라인 끝에 붙여넣기
     if (!currentLine) {
       currentLine = anchorLine || lastFocusedLine;
+      if (!currentLine) {
+        // document.activeElement 탐색 (모바일 컨텍스트 메뉴 후 포커스 유실 시)
+        let el = document.activeElement;
+        while (el && el !== linesEl) {
+          if (el.classList?.contains('project-line')) { currentLine = el; break; }
+          el = el.parentElement;
+        }
+      }
+      if (!currentLine) {
+        // 최후 폴백: DOM의 마지막 라인
+        const allLines = linesEl.querySelectorAll('.project-line');
+        currentLine = allLines[allLines.length - 1] || null;
+      }
       if (!currentLine) return;
       before = getLineText(currentLine);
       after = '';
@@ -1688,33 +1715,87 @@ function buildLinesSection(project, editMode = true) {
     saveAllLines(project.id, linesEl);
   }
 
+  // HTML 클립보드에서 줄바꿈 보존하여 텍스트 추출
+  function htmlClipboardToText(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const lines = [];
+    let cur = '';
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        cur += node.textContent;
+      } else if (node.nodeName === 'BR') {
+        lines.push(cur); cur = '';
+      } else if (['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(node.nodeName)) {
+        if (cur || lines.length > 0) { lines.push(cur); cur = ''; }
+        for (const c of node.childNodes) walk(c);
+        if (cur || lines.length > 0) { lines.push(cur); cur = ''; }
+      } else {
+        for (const c of node.childNodes) walk(c);
+      }
+    };
+    for (const c of tmp.childNodes) walk(c);
+    if (cur) lines.push(cur);
+    return lines.filter((l, i, a) => !(i === 0 && l === '') && !(i === a.length - 1 && l === '')).join('\n');
+  }
+
   linesEl.addEventListener('paste', async e => {
+    // 비동기 전에 삽입 대상 라인을 동기적으로 캡처
+    const sel = window.getSelection();
+    let targetLine = null;
+    if (sel?.rangeCount) {
+      let node = sel.getRangeAt(0).startContainer;
+      while (node && node !== linesEl) {
+        if (node.classList?.contains('project-line')) { targetLine = node; break; }
+        node = node.parentElement;
+      }
+    }
+    if (!targetLine) targetLine = lastFocusedLine;
+
     const cd = e.clipboardData || window.clipboardData;
     let pasted = cd?.getData('text/plain') || cd?.getData('text') || '';
 
+    // text/plain에 줄바꿈이 없으면 text/html에서 구조 추출
+    if (pasted && !/[\n\r\u2028\u2029]/.test(pasted)) {
+      const html = cd?.getData('text/html') || '';
+      if (html) {
+        const fromHtml = htmlClipboardToText(html);
+        if (/\n/.test(fromHtml)) pasted = fromHtml;
+      }
+    }
+
     if (pasted) {
       e.preventDefault();
-      applyPastedText(pasted, null);
+      applyPastedText(pasted, targetLine || lastFocusedLine);
       return;
     }
 
-    // iOS Safari: clipboardData가 비어있을 때 async API 시도
+    // async Clipboard API (iOS Safari — clipboardData가 완전히 비어있는 경우)
     if (navigator.clipboard?.readText) {
       e.preventDefault();
       try {
         pasted = await navigator.clipboard.readText();
-        if (pasted) applyPastedText(pasted, null);
-      } catch {
-        // 권한 거부 등 — 브라우저 기본 동작이 이미 막혔으므로 input 이벤트 대기
-      }
+        if (pasted) applyPastedText(pasted, targetLine || lastFocusedLine);
+      } catch {}
+      return;
     }
-    // else: 브라우저 기본 붙여넣기 허용, input 이벤트에서 처리
+
+    // 최후 폴백: 브라우저 기본 붙여넣기 허용 → input 이벤트에서 처리
   });
 
   // 브라우저가 DOM에 직접 삽입한 경우 처리 (Android/iOS 폴백)
   linesEl.addEventListener('input', e => {
     if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromPasteAsQuotation') return;
     let line = lastFocusedLine;
+    if (!line || !linesEl.contains(line)) {
+      // 스테일 참조 또는 null — <br>/<div>가 삽입된 라인 탐색
+      line = null;
+      for (const l of linesEl.querySelectorAll('.project-line')) {
+        if (l.querySelector('br') || l.querySelector('div:not(.chord-area):not(.chord-slot)')) {
+          line = l; break;
+        }
+      }
+    }
     if (!line) return;
 
     // <br> 태그나 중첩 <div>로 삽입된 줄바꿈 감지 (textContent에는 안 보임)
