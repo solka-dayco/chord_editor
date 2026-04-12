@@ -75,7 +75,8 @@ let selectedBass    = '';
 // 네비게이션 전역 상태 (초기화 코드보다 먼저 선언 필요)
 let contextProjectId = null;
 let currentProjectId = null;
-let isEditMode = false;
+let isEditMode = true;
+
 
 function renderBtnGroup(groupId, items, getCurrent, onSelect, noneLabel) {
   const group = document.getElementById(groupId);
@@ -430,7 +431,18 @@ function updateBarreBtns() {
   container.innerHTML = '';
   let needsRedraw = false;
   getBarreFrets().forEach(f => {
-    if (barreActive[f] === undefined) { barreActive[f] = true; needsRedraw = true; }
+    if (barreActive[f] === undefined) {
+      // 자동 활성화: 최대 2개 제한 확인
+      const activeCount = Object.values(barreActive).filter(Boolean).length;
+      if (activeCount < 2) {
+        barreActive[f] = true;
+        // 커버되는 줄에 한해 낮은 프렛 dot 제거
+        removeDotsUnderBarre(f);
+        needsRedraw = true;
+      } else {
+        barreActive[f] = false;
+      }
+    }
     const btn = document.createElement('button');
     btn.textContent = 'B';
     const left = TL() + (f - 0.5) * FW() - 12;
@@ -441,7 +453,18 @@ function updateBarreBtns() {
       color:${barreActive[f] ? '#fff' : '#888'};
       font-size:11px;font-family:'Pretendard',sans-serif;
       cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;`;
-    btn.onclick = () => { barreActive[f] = !barreActive[f]; draw(); };
+    btn.onclick = () => {
+      if (!barreActive[f]) {
+        // 활성화 시도: 최대 2개 제한 확인
+        const activeCount = Object.values(barreActive).filter(Boolean).length;
+        if (activeCount >= 2) return;
+        barreActive[f] = true;
+        removeDotsUnderBarre(f);
+      } else {
+        barreActive[f] = false;
+      }
+      draw();
+    };
     container.appendChild(btn);
   });
   if (needsRedraw) drawCanvas(ctx, RATIO);
@@ -473,6 +496,10 @@ canvas.addEventListener('click', e => {
 
   const fi = Math.floor((mx - TL()) / FW()) + 1;
   if (fi < 1 || fi > FRETS) return;
+
+  // 바레로 커버된 줄은 해당 바레 프렛보다 낮은 곳에 dot 불가
+  const barreMapCheck = buildBarreMap(dots, barreActive);
+  if (barreMapCheck[si] !== undefined && fi < barreMapCheck[si]) return;
 
   const idx = dots.findIndex(d => d.s === si && d.f === fi);
   if (idx !== -1) {
@@ -594,11 +621,15 @@ async function playChord(chord) {
   for (let s = 0; s < STRINGS; s++) {
     if (chord.openMute[s] === 'mute') continue;
     const dot = chord.dots.find(d => d.s === s);
+    const barreFret = barreMap[s];
     let fret = 0;
-    if (dot) {
+    // 가장 우측(높은 프렛) dot만 소리남
+    if (dot !== undefined && barreFret !== undefined) {
+      fret = fretBase + Math.max(dot.f, barreFret);
+    } else if (dot !== undefined) {
       fret = fretBase + dot.f;
-    } else if (barreMap[s] !== undefined) {
-      fret = fretBase + barreMap[s];
+    } else if (barreFret !== undefined) {
+      fret = fretBase + barreFret;
     }
     notes.push({ s, midi: OPEN_MIDI[s] + fret + capoOffset });
   }
@@ -653,6 +684,24 @@ function calcActualFret(f) {
   return (currentFretNumber - 2) + f;
 }
 
+// 바레 활성화 시 커버되는 줄(minS~maxS)에서 해당 프렛보다 낮은 dot만 제거 (전역 dots 대상)
+function removeDotsUnderBarre(f) {
+  const same = dots.filter(d => d.f === f);
+  if (same.length < 2) return;
+  const minS = Math.min(...same.map(d => d.s));
+  const maxS = Math.max(...same.map(d => d.s));
+  dots = dots.filter(d => !(d.f < f && d.s >= minS && d.s <= maxS));
+}
+
+// 모달 에디터용
+function meRemoveDotsUnderBarre(f) {
+  const same = me_dots.filter(d => d.f === f);
+  if (same.length < 2) return;
+  const minS = Math.min(...same.map(d => d.s));
+  const maxS = Math.max(...same.map(d => d.s));
+  me_dots = me_dots.filter(d => !(d.f < f && d.s >= minS && d.s <= maxS));
+}
+
 // 활성 바레가 커버하는 줄→바레프렛 맵 생성
 function buildBarreMap(dotList, barre) {
   const count = {};
@@ -674,11 +723,15 @@ function calcStringNotes() {
   for (let s = 0; s < STRINGS; s++) {
     if (openMute[s] === 'mute') continue;
     const dot = dots.find(d => d.s === s);
+    const barreFret = barreMap[s];
     let fret = 0;
-    if (dot) {
+    // 가장 우측(높은 프렛) dot만 소리남
+    if (dot !== undefined && barreFret !== undefined) {
+      fret = calcActualFret(Math.max(dot.f, barreFret));
+    } else if (dot !== undefined) {
       fret = calcActualFret(dot.f);
-    } else if (barreMap[s] !== undefined) {
-      fret = calcActualFret(barreMap[s]);
+    } else if (barreFret !== undefined) {
+      fret = calcActualFret(barreFret);
     }
     notes.push({ s, midi: OPEN_MIDI[s] + fret });
   }
@@ -802,7 +855,7 @@ function navigateTo(view, projectId) {
     }
   } else if (view === 'project' && projectId) {
     contextProjectId = null;
-    isEditMode = false;
+    isEditMode = true;
     renderProjectView(projectId);
     closeSidebar();
     if (screen.orientation?.unlock) {
@@ -1503,7 +1556,13 @@ function buildChordArea(line, project, editMode = true) {
         slot.appendChild(img);
 
         if (editMode) {
-          img.addEventListener('contextmenu', e => { e.preventDefault(); placeChordInSlot(project.id, line.id, dataIdx, null); });
+          img.addEventListener('contextmenu', e => {
+            e.preventDefault();
+            // 데스크탑(마우스)에서만 우클릭 삭제 — 모바일 길게 누르기(~600ms contextmenu)는 무시
+            if (window.matchMedia('(pointer: fine)').matches) {
+              placeChordInSlot(project.id, line.id, dataIdx, null);
+            }
+          });
 
           // 삭제 버튼
           const slotDel = document.createElement('button');
@@ -1512,8 +1571,6 @@ function buildChordArea(line, project, editMode = true) {
           slotDel.onclick = e => { e.stopPropagation(); placeChordInSlot(project.id, line.id, dataIdx, null); };
           slot.appendChild(slotDel);
 
-          // 모바일 홀드 → 삭제 아이콘
-          setupSlotTouchHold(slot);
 
           slot.draggable = true;
           slot.addEventListener('dragstart', e => {
@@ -2078,17 +2135,15 @@ function createThumbEl(chord, idx, projectId, editMode = true) {
 }
 
 function setupThumbTouchDrag(thumb, chord, projectId) {
-  const HOLD_MS = 700;   // 홀드 인식 시간
-  const MOVE_THRESHOLD = 8; // 드래그 인식 거리(px)
+  const MOVE_THRESHOLD = 8;
 
-  let holdTimer = null;
+  thumb.addEventListener('contextmenu', e => e.preventDefault());
+
   let ghost = null;
   let startX = 0, startY = 0;
-  let mode = null; // null | 'drag' | 'hold'
+  let mode = null; // null | 'drag'
 
   function cleanup() {
-    clearTimeout(holdTimer);
-    holdTimer = null;
     if (ghost) { ghost.remove(); ghost = null; }
     thumb.classList.remove('dragging');
     document.querySelectorAll('.chord-slot').forEach(s => s.classList.remove('drag-over'));
@@ -2114,14 +2169,6 @@ function setupThumbTouchDrag(thumb, chord, projectId) {
     const t = e.touches[0];
     startX = t.clientX; startY = t.clientY;
     mode = null;
-
-    // 홀드 타이머: 이동 없이 700ms 지나면 삭제 아이콘
-    holdTimer = setTimeout(() => {
-      if (mode === null) {
-        mode = 'hold';
-        thumb.classList.add('show-delete');
-      }
-    }, HOLD_MS);
   }, { passive: true });
 
   thumb.addEventListener('touchmove', e => {
@@ -2129,12 +2176,8 @@ function setupThumbTouchDrag(thumb, chord, projectId) {
     const t = e.touches[0];
     const dx = t.clientX - startX;
     const dy = t.clientY - startY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (mode === null && dist > MOVE_THRESHOLD) {
-      // 이동 감지 → 드래그 모드 진입, 홀드 취소
-      clearTimeout(holdTimer);
-      holdTimer = null;
+    if (mode === null && Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
       mode = 'drag';
       startGhost(t.clientX, t.clientY);
     }
@@ -2155,69 +2198,26 @@ function setupThumbTouchDrag(thumb, chord, projectId) {
     const t = e.changedTouches[0];
 
     if (prevMode === 'drag') {
-      // 드래그 종료: 슬롯에 놓기
       const el = document.elementFromPoint(t.clientX, t.clientY);
       const slot = el ? el.closest('.chord-slot') : null;
       if (slot && slot.dataset.lineId) {
         placeChordInSlot(projectId, slot.dataset.lineId, parseInt(slot.dataset.slotIdx), chord.id);
       }
       cleanup();
-    } else if (prevMode === 'hold') {
-      // 홀드 후 손 뗌: 삭제 아이콘 유지 (다음 탭에서 닫힘)
-      cleanup();
-      thumb.classList.add('show-delete');
-      // 외부 탭 시 닫기
-      const dismissHandler = ev => {
-        if (!thumb.contains(ev.target)) {
-          thumb.classList.remove('show-delete');
-          document.removeEventListener('touchstart', dismissHandler, true);
-        }
-      };
-      document.addEventListener('touchstart', dismissHandler, true);
+      e.preventDefault();
     } else {
-      // 짧은 탭: 편집 모달
+      // 삭제 버튼 탭이면 모달 열지 않음 (onclick이 별도로 처리)
+      if (e.target.closest('.chord-thumb-delete')) { cleanup(); return; }
       cleanup();
       openViewModal(chord, projectId);
     }
   });
 
+  thumb.addEventListener('click', e => {
+    if (mode === 'drag') e.stopPropagation();
+  });
+
   thumb.addEventListener('touchcancel', cleanup);
-}
-
-function setupSlotTouchHold(slot) {
-  const HOLD_MS = 700;
-  const MOVE_THRESHOLD = 8;
-  let holdTimer = null;
-  let startX = 0, startY = 0;
-
-  slot.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    holdTimer = setTimeout(() => {
-      slot.classList.add('show-delete');
-      const dismiss = ev => {
-        if (!slot.contains(ev.target)) {
-          slot.classList.remove('show-delete');
-          document.removeEventListener('touchstart', dismiss, true);
-        }
-      };
-      document.addEventListener('touchstart', dismiss, true);
-    }, HOLD_MS);
-  }, { passive: true });
-
-  slot.addEventListener('touchmove', e => {
-    if (!holdTimer) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
-      clearTimeout(holdTimer); holdTimer = null;
-    }
-  }, { passive: true });
-
-  const cancel = () => { clearTimeout(holdTimer); holdTimer = null; };
-  slot.addEventListener('touchend', cancel);
-  slot.addEventListener('touchcancel', cancel);
 }
 
 function placeChordInSlot(projectId, rowId, slotIdx, chordId) {
@@ -2824,6 +2824,11 @@ function meUpdateBarreBtns() {
   const meDS = Math.round(meSH * 0.85);
 
   meGetBarreFrets().forEach(f => {
+    if (me_barre[f] === undefined) {
+      const activeCount = Object.values(me_barre).filter(Boolean).length;
+      me_barre[f] = activeCount < 2;
+      if (me_barre[f]) meRemoveDotsUnderBarre(f);
+    }
     const btn = document.createElement('button');
     btn.textContent = 'B';
     const left = meTL + (f - 0.5) * meFW - 12;
@@ -2834,7 +2839,17 @@ function meUpdateBarreBtns() {
       color:${me_barre[f] ? '#fff' : '#888'};
       font-size:11px;font-family:'Pretendard',sans-serif;
       cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;`;
-    btn.onclick = () => { me_barre[f] = !me_barre[f]; meDraw(); };
+    btn.onclick = () => {
+      if (!me_barre[f]) {
+        const activeCount = Object.values(me_barre).filter(Boolean).length;
+        if (activeCount >= 2) return;
+        me_barre[f] = true;
+        meRemoveDotsUnderBarre(f);
+      } else {
+        me_barre[f] = false;
+      }
+      meDraw();
+    };
     container.appendChild(btn);
   });
 }
@@ -2872,6 +2887,10 @@ function meCanvasClick(e) {
   if (mx < meTL || mx > meTR + 5) return;
   const fi = Math.floor((mx - meTL) / meFW) + 1;
   if (fi < 1 || fi > FRETS) return;
+
+  // 바레로 커버된 줄은 해당 바레 프렛보다 낮은 곳에 dot 불가
+  const meBarreMapCheck = buildBarreMap(me_dots, me_barre);
+  if (meBarreMapCheck[si] !== undefined && fi < meBarreMapCheck[si]) return;
 
   const idx = me_dots.findIndex(d => d.s === si && d.f === fi);
   if (idx !== -1) {

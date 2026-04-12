@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "appium-mcp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "appium-mcp@latest"
+      ],
+      "env": {},
+      "defer_loading": true,
+      "disabled": false
+    }
+  }
+}
