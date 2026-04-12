@@ -123,6 +123,7 @@
             <div class="chord-preview">
               <span class="preview-label">코드명</span>
               <span id="chord-display" class="chord-display">A</span>
+              <span id="chord-suggestions" class="chord-suggestions"></span>
             </div>
 
           </div>
@@ -172,8 +173,12 @@
               <select id="export-scale" class="export-select">
                 <option value="0.5">x0.5 (200×150)</option>
                 <option value="1" selected>x1 (400×300)</option>
+                <!-- 화질 제한 해제 (테스트) — 복구 시 disabled 복원
                 <option value="2" disabled>x2 (800×600) 🔒</option>
                 <option value="3" disabled>x3 (1200×900) 🔒</option>
+                -->
+                <option value="2">x2 (800×600)</option>
+                <option value="3">x3 (1200×900)</option>
               </select>
               <button class="btn btn-primary" onclick="savePNG()">PNG 저장</button>
             </div>
@@ -189,6 +194,18 @@
                 <option value="">프로젝트 선택</option>
               </select>
               <button class="btn btn-ghost" onclick="addCurrentChordToProject()">프로젝트에 추가</button>
+            </div>
+          </div>
+
+          <div class="divider-h"></div>
+
+          <!-- ── 공유 코드 붙여넣기 ── -->
+          <div class="add-to-project-row">
+            <span class="hint">공유 코드 붙여넣기</span>
+            <div class="btn-group">
+              <input type="text" id="paste-share-input" class="export-select"
+                     placeholder="chorditor:v1:…" style="flex:1;min-width:0;" />
+              <button class="btn btn-ghost" onclick="triggerManualImport()">가져오기</button>
             </div>
           </div>
 
@@ -241,6 +258,68 @@
     </div>
   </div>
 
+  <!-- ── 모달: 공유 ── -->
+  <div class="modal-overlay hidden" id="modal-share">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">공유 코드</span>
+        <button class="icon-btn" onclick="closeModal('modal-share')"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" style="gap:16px;">
+        <p class="hint">코드 배열(가사 제외)을 공유합니다.</p>
+        <div class="share-field-group">
+          <span class="share-label">공유 코드</span>
+          <div class="share-row">
+            <input type="text" id="share-code-input" class="share-code-input" readonly />
+            <button class="btn btn-ghost" id="share-code-copy-btn" onclick="copyShareCode()">복사</button>
+          </div>
+        </div>
+        <div class="share-field-group">
+          <span class="share-label">링크 (웹)</span>
+          <div class="share-row">
+            <input type="text" id="share-url-input" class="share-code-input" readonly />
+            <button class="btn btn-ghost" id="share-url-copy-btn" onclick="copyShareUrl()">복사</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 모달: 가져오기 ── -->
+  <div class="modal-overlay hidden" id="modal-import">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">코드 배열 가져오기</span>
+        <button class="icon-btn" onclick="closeModal('modal-import')"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" style="gap:16px;">
+        <p class="hint" id="import-meta"></p>
+        <div class="share-field-group">
+          <span class="share-label">기존 프로젝트에 추가</span>
+          <div class="share-row">
+            <select id="import-project-select" class="export-select" style="flex:1"></select>
+            <button class="btn btn-primary" onclick="confirmImport('existing')">가져오기</button>
+          </div>
+        </div>
+        <div class="share-field-group">
+          <span class="share-label">새 프로젝트로 가져오기</span>
+          <div class="share-row">
+            <input type="text" id="import-new-name" class="share-code-input" placeholder="새 프로젝트 이름" />
+            <button class="btn btn-primary" onclick="confirmImport('new')">만들기</button>
+          </div>
+        </div>
+        <div class="share-field-group">
+          <span class="share-label">함께 적용할 설정</span>
+          <div class="import-settings-row">
+            <label><input type="checkbox" id="import-apply-bpm" checked /> BPM</label>
+            <label><input type="checkbox" id="import-apply-capo" checked /> Capo</label>
+            <label><input type="checkbox" id="import-apply-col" checked /> 칸 수</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── 저장 공간 경고 토스트 ── -->
   <div class="storage-warning hidden" id="storage-warning">
     저장 공간이 부족합니다. 일부 내용이 저장되지 않을 수 있어요.
@@ -248,5 +327,6 @@
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="app.js"></script>
+  <script src="voicing-library.js"></script>
 </body>
 </html>

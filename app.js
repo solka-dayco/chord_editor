@@ -6,6 +6,7 @@ const ctx    = canvas.getContext('2d');
 
 const BASE_W     = 400;
 const BASE_H     = 300;
+const MAIN_DISPLAY_SCALE = 0.8; // 메인 에디터 캔버스 표시 크기 배율
 const BASE_Y_OFF = 55;
 const BASE_MX    = 45;
 const BASE_MY    = 18;
@@ -32,6 +33,11 @@ const DS = () => Math.round(SH() * 0.85);
 
 function resizeCanvas() {
   const availW = canvas.parentElement.clientWidth || BASE_W;
+  const displayW = Math.round(availW * MAIN_DISPLAY_SCALE);
+  canvas.style.width  = displayW + 'px';
+  canvas.style.height = 'auto';
+  // canvas-inner를 캔버스 표시 크기에 맞춤 (바레 버튼 기준점, 중앙정렬용)
+  canvas.parentElement.style.width = displayW + 'px';
   RATIO = availW / BASE_W;
   canvas.width  = W();
   canvas.height = CH();
@@ -63,6 +69,288 @@ IMAGE_LIST.forEach(key => {
 // ═══════════════════════════════════════════════════════════════
 const ROOTS_SHARP = ['A','A#','B','C','C#','D','D#','E','F','F#','G','G#'];
 const ROOTS_FLAT  = ['A','Bb','B','C','Db','D','Eb','E','F','Gb','G','Ab'];
+
+// ── 코드명 추천 엔진 ──
+class GuitarChordSuggester {
+  static OPEN_PCS  = [4, 9, 2, 7, 11, 4];
+  static OPEN_MIDI = [40, 45, 50, 55, 59, 64];
+  static NAMES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  static NAMES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  static NAMES_AUTO  = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+  constructor(opts = {}) {
+    this.options = { maxResults:4, searchThreshold:38, spellingMode:'auto',
+      preferDominantFlat7SlashShorthand:true, ...opts };
+    this.voicingLibrary = new Map();
+  }
+
+  addVoicing(input, names) {
+    const key = this._key(this._parse(input));
+    this.voicingLibrary.set(key, Array.isArray(names) ? names : [names]);
+  }
+
+  suggest(input, opts = {}) {
+    const maxR = opts.maxResults ?? this.options.maxResults;
+    const anal = this._analyze(input);
+    if (!anal.sounding.length) return ['검색 안됨'];
+
+    const exact = this.voicingLibrary.get(anal.voicingKey);
+    if (exact?.length) return [exact[0]];
+
+    const candidates = [];
+    for (let root = 0; root < 12; root++) {
+      for (const quality of ['major','minor','aug','dim']) {
+        for (const seventh of this._allowedSevenths(quality)) {
+          for (const func of [null,'sus4','add9','b5']) {
+            if (!this._validBase(quality, seventh, func)) continue;
+            const base = this._eval(anal, root, quality, seventh, func, null, null);
+            if (base) candidates.push(base);
+            for (const tension of ['b9','9','#9','11','#11','b13','13']) {
+              if (!this._canTension(quality, seventh, func, tension)) continue;
+              const c = this._eval(anal, root, quality, seventh, func, tension, null);
+              if (c) candidates.push(c);
+            }
+          }
+        }
+      }
+    }
+
+    const withSlash = [...candidates];
+    for (const c of candidates) {
+      const sv = this._slashVariant(c, anal);
+      if (sv) withSlash.push(sv);
+    }
+
+    const best = new Map();
+    for (const c of withSlash) {
+      const prev = best.get(c.name);
+      if (!prev || c.score > prev.score) best.set(c.name, c);
+    }
+
+    const sorted = [...best.values()].sort((a, b) =>
+      b.score !== a.score ? b.score - a.score : a.isSlash !== b.isSlash ? (a.isSlash ? 1 : -1) : a.name.localeCompare(b.name)
+    ).filter(c => c.score >= this.options.searchThreshold);
+
+    return sorted.length ? sorted.slice(0, maxR).map(c => c.name) : ['검색 안됨'];
+  }
+
+  _parse(input) {
+    const tokens = Array.isArray(input) ? input
+      : typeof input === 'string' ? (/\s/.test(input.trim()) ? input.trim().split(/\s+/) : input.trim().split(''))
+      : (() => { throw new TypeError('입력은 문자열 또는 배열이어야 합니다.'); })();
+    if (tokens.length !== 6) throw new Error(`입력 길이는 6이어야 합니다. 받은: ${tokens.length}`);
+    return tokens.map(t => {
+      if (t === null || t === undefined) return null;
+      if (typeof t === 'number') return t;
+      const s = String(t).trim();
+      if (/^[xX]$/.test(s)) return null;
+      return parseInt(s, 10);
+    });
+  }
+
+  _key(frets) { return frets.map(f => f === null ? 'x' : String(f)).join('|'); }
+
+  _analyze(input) {
+    const frets = this._parse(input);
+    const raw = frets.map((fret, idx) =>
+      fret === null ? null : {
+        string: 6 - idx, fret,
+        pc: (GuitarChordSuggester.OPEN_PCS[idx] + fret) % 12,
+        midi: GuitarChordSuggester.OPEN_MIDI[idx] + fret,
+      }
+    );
+    const sounding = raw.filter(Boolean);
+    const pcsOrdered = [];
+    for (const n of sounding) if (!pcsOrdered.includes(n.pc)) pcsOrdered.push(n.pc);
+    return { frets, raw, sounding, pcsOrdered,
+      lowestPc: sounding[0]?.pc ?? null, voicingKey: this._key(frets) };
+  }
+
+  _allowedSevenths(q) {
+    if (q === 'aug') return [null, '7'];
+    if (q === 'dim') return [null, '7', 'dim7'];
+    return [null, 'M7', '7', '6'];
+  }
+
+  _validBase(q, s, f) {
+    if (q === 'minor' && (f === 'add9' || f === 'sus4')) return false;
+    if (f === 'sus4' && q !== 'major') return false;
+    if (f === 'add9' && q !== 'major') return false;
+    if (q === 'dim' && f === 'b5') return false;
+    if (q === 'aug' && (s === 'M7' || s === '6')) return false;
+    if (q === 'dim' && s === '6') return false;
+    if (s === '6' && f === 'sus4') return false; // 6코드는 완성된 장3화음 기반, sus4와 공존 불가
+    return true;
+  }
+
+  _canTension(q, s, f, t) {
+    if (!t) return true;
+    if (!s || s === 'dim7' || s === '6') return false;
+    if (f === 'add9' && ['b9','9','#9'].includes(t)) return false;
+    if (s === '6' && t === 'b13') return false;
+    return this._allowedTensions(q, s, f).includes(t);
+  }
+
+  _allowedTensions(q, s, f) {
+    if (q === 'major' && s === '7') return ['b9','9','#9','11','#11','b13','13'];
+    if (q === 'major' && s === 'M7') return ['9','#11','13'];
+    if (q === 'minor' && s === '7') return ['9','11'];
+    if (q === 'dim'   && s === '7') return ['11','b13'];
+    return [];
+  }
+
+  _itvMap() { return { b9:1, '9':2, '#9':3, '11':5, '#11':6, b13:8, '13':9 }; }
+
+  _observed(pcsOrdered, root) {
+    const seen = new Set(), out = [];
+    for (const pc of pcsOrdered) {
+      const iv = (pc - root + 12) % 12;
+      if (!seen.has(iv)) { seen.add(iv); out.push(iv); }
+    }
+    return out.sort((a, b) => a - b);
+  }
+
+  _buildSpec(q, s, f, t) {
+    const allowed = new Set([0]), required = new Set();
+    let opt5 = false;
+
+    if (q === 'major') { allowed.add(4); required.add(4); allowed.add(7); opt5 = true; }
+    if (q === 'minor') { allowed.add(3); required.add(3); allowed.add(7); opt5 = true; }
+    if (q === 'aug')   { allowed.add(4); required.add(4); allowed.add(8); required.add(8); }
+    if (q === 'dim')   { allowed.add(3); required.add(3); allowed.add(6); required.add(6); }
+
+    if (f === 'sus4') {
+      allowed.delete(4); required.delete(4);
+      allowed.add(5); required.add(5); allowed.add(4);
+    }
+    if (f === 'add9') { allowed.add(2); required.add(2); }
+    if (f === 'b5')   { allowed.delete(7); required.delete(7); allowed.add(6); required.add(6); opt5 = false; }
+
+    if (s === 'M7')   { allowed.add(11); required.add(11); }
+    if (s === '7')    { allowed.add(10); required.add(10); }
+    if (s === '6')    { allowed.add(9);  required.add(9);  }
+    if (s === 'dim7') { allowed.add(9);  required.add(9);  }
+
+    if (t) { const iv = this._itvMap()[t]; allowed.add(iv); required.add(iv); }
+
+    return { allowed, required, opt5 };
+  }
+
+  _eval(anal, root, q, s, f, t, slash) {
+    if (!this._validBase(q, s, f)) return null;
+    if (!this._canTension(q, s, f, t)) return null;
+    if ((q === 'dim' || s === 'dim7') && slash !== null) return null;
+
+    const obs = this._observed(anal.pcsOrdered, root);
+    const obsSet = new Set(obs);
+    const spec = this._buildSpec(q, s, f, t);
+
+    for (const r of spec.required) if (!obsSet.has(r)) return null;
+
+    const rootPresent = anal.sounding.some(n => n.pc === root);
+    let score = rootPresent ? 12 : -7;
+    if (anal.lowestPc === root) score += 14;
+    score += spec.required.size * 11;
+    if (spec.opt5 && obsSet.has(7)) score += 6;
+
+    const unexplained = obs.filter(iv => !spec.allowed.has(iv));
+    score -= unexplained.length * 22;
+    if (unexplained.length >= 2) return null;
+
+    if (q === 'major' && obsSet.has(3)) score -= 18;
+    if (q === 'minor' && obsSet.has(4)) score -= 18;
+    if (f === 'sus4' && (obsSet.has(3) || obsSet.has(4))) score -= 10;
+    if (q === 'major' && s === '7' && f === 'b5' && !obsSet.has(7) && obsSet.has(6)) score -= 12;
+    if (q === 'dim' && s === '7' && t) score -= 18;
+    if (anal.lowestPc === root && !obsSet.has(3) && !obsSet.has(4)) score += 6;
+    if (f === 'sus4' && t) score -= 6; // sus4 + tension 과해석 억제
+    if (!t) score += 3;                // tension 없는 단순 구조 우대
+
+    if (slash !== null) {
+      if (anal.lowestPc !== slash) return null;
+      if (!obsSet.has((slash - root + 12) % 12)) return null;
+      score += 11; score -= 2;
+      const slashInterval = (slash - root + 12) % 12;
+      if (slashInterval === 4 || slashInterval === 3) score += 2;
+      if (slashInterval === 7) score += 1;
+      if (slashInterval === 10 || slashInterval === 11) score += 1;
+    }
+
+    return { name: this._fmt(root, q, s, f, t, slash), score, root, quality:q,
+      seventh:s, func:f, tension:t, slash, isSlash: slash !== null };
+  }
+
+  _slashVariant(c, anal) {
+    const lo = anal.lowestPc;
+    if (lo === null || c.slash !== null || lo === c.root) return null;
+    if (c.quality === 'dim' || c.seventh === 'dim7') return null;
+    return this._eval(anal, c.root, c.quality, c.seventh, c.func, c.tension, lo);
+  }
+
+  _fmt(root, q, s, f, t, slash) {
+    const rn = this._spell(root);
+    if (q === 'dim' && s === 'dim7') return rn + 'dim7';
+    if (q === 'dim' && s === '7') {
+      const items = ['b5']; if (t) items.push(t);
+      const base = `${rn}m7(${items.join(',')})`;
+      return slash !== null && slash !== root ? `${base}/${this._spell(slash)}` : base;
+    }
+    let base = rn;
+    if (q === 'minor') base += 'm';
+    if (q === 'aug')   base += 'aug';
+    if (q === 'dim' && !s) base += 'dim';
+    if (q === 'major') { if (s==='M7') base+='M7'; else if (s==='7') base+='7'; else if (s==='6') base+='6'; }
+    if (q === 'minor') { if (s==='M7') base+='M7'; else if (s==='7') base+='7'; else if (s==='6') base+='6'; }
+    if (q === 'aug' && s === '7') base += '7';
+    if (f === 'sus4') base += 'sus4';
+    if (f === 'add9') base += 'add9';
+    const parens = [];
+    if (f === 'b5') parens.push('b5');
+    if (t) parens.push(t);
+    if (parens.length) base += `(${parens.join(',')})`;
+    if (slash !== null && slash !== root) {
+      const sn = this._spell(slash);
+      if (this.options.preferDominantFlat7SlashShorthand &&
+          q==='major' && s==='7' && !f && !t && (slash-root+12)%12===10)
+        return `${rn}/${sn}`;
+      return `${base}/${sn}`;
+    }
+    return base;
+  }
+
+  _spell(pc) {
+    const m = this.options.spellingMode;
+    if (m === 'sharp') return GuitarChordSuggester.NAMES_SHARP[pc];
+    if (m === 'flat')  return GuitarChordSuggester.NAMES_FLAT[pc];
+    return GuitarChordSuggester.NAMES_AUTO[pc];
+  }
+}
+
+const chordSuggester = new GuitarChordSuggester({ searchThreshold: 38 });
+
+// 보이싱 라이브러리는 voicing-library.js 에서 관리
+
+// 현재 편집 상태 → 새 클래스 입력 형식 변환
+// 새 클래스: index 0 = 6번줄(저음 E, s=5), index 5 = 1번줄(고음 e, s=0)
+function getChordFretArray() {
+  const barreMap = buildBarreMap(dots, barreActive);
+  const arr = [];
+  for (let s = 5; s >= 0; s--) {
+    if (openMute[s] === 'mute') { arr.push(null); continue; }
+    const dot = dots.find(d => d.s === s);
+    const bf  = barreMap[s];
+    if (dot !== undefined && bf !== undefined) arr.push(calcActualFret(Math.max(dot.f, bf)));
+    else if (dot !== undefined)  arr.push(calcActualFret(dot.f));
+    else if (bf  !== undefined)  arr.push(calcActualFret(bf));
+    else arr.push(0);
+  }
+  return arr;
+}
+
+function suggestChordNames() {
+  chordSuggester.options.spellingMode = accidental;
+  return chordSuggester.suggest(getChordFretArray());
+}
 
 let accidental      = 'sharp';
 let selectedRoot    = 'A';
@@ -179,6 +467,13 @@ function updateChordDisplay() {
   const el = document.getElementById('chord-display');
   if (el) el.innerHTML = buildChordHTML();
   draw();
+}
+
+function updateChordSuggestions() {
+  const el = document.getElementById('chord-suggestions');
+  if (!el) return;
+  const names = suggestChordNames();
+  el.innerHTML = names.map(n => `<span class="chord-suggest-item">${n}</span>`).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -305,13 +600,13 @@ function drawCanvas(c, ratio, data = null) {
 
   // 너트
   c.strokeStyle = '#000000';
-  c.lineWidth = Math.max(1, 3 * sc);
+  c.lineWidth = Math.max(2, 6 * sc);
   c.lineCap = 'round';
   c.beginPath(); c.moveTo(tl, tt); c.lineTo(tl, tb); c.stroke();
 
   // 프렛선
   c.strokeStyle = '#2a2a2a';
-  c.lineWidth = Math.max(0.5, sc);
+  c.lineWidth = Math.max(1, 2 * sc);
   c.lineCap = 'butt';
   for (let f = 0; f <= FRETS; f++) {
     const x = tl + f * fw;
@@ -420,6 +715,7 @@ function drawCanvas(c, ratio, data = null) {
 function draw() {
   drawCanvas(ctx, RATIO);
   updateBarreBtns();
+  updateChordSuggestions();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -432,26 +728,19 @@ function updateBarreBtns() {
   let needsRedraw = false;
   getBarreFrets().forEach(f => {
     if (barreActive[f] === undefined) {
-      // 자동 활성화: 최대 2개 제한 확인
-      const activeCount = Object.values(barreActive).filter(Boolean).length;
-      if (activeCount < 2) {
-        barreActive[f] = true;
-        // 커버되는 줄에 한해 낮은 프렛 dot 제거
-        removeDotsUnderBarre(f);
-        needsRedraw = true;
-      } else {
-        barreActive[f] = false;
-      }
+      barreActive[f] = false; // 기본 비활성 — 사용자가 직접 활성화
     }
     const btn = document.createElement('button');
     btn.textContent = 'B';
-    const left = TL() + (f - 0.5) * FW() - 12;
-    const top  = TT() - DS() - 16;
-    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:24px;height:24px;
+    const ds = MAIN_DISPLAY_SCALE;
+    const btnSize = Math.round(24 * ds);
+    const left = Math.round((TL() + (f - 0.5) * FW()) * ds) - Math.round(btnSize / 2);
+    const top  = Math.round((TT() - DS()) * ds) - Math.round(btnSize * 0.67);
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${btnSize}px;height:${btnSize}px;
       border-radius:50%;border:1.5px solid #888;
       background:${barreActive[f] ? '#1a1714' : '#fff'};
       color:${barreActive[f] ? '#fff' : '#888'};
-      font-size:11px;font-family:'Pretendard',sans-serif;
+      font-size:${Math.round(11 * ds)}px;font-family:'Pretendard',sans-serif;
       cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;`;
     btn.onclick = () => {
       if (!barreActive[f]) {
@@ -1023,10 +1312,11 @@ function reorderPinned(dragId, targetId) {
 function promptCreateProject() {
   const plan = getPlan();
   const projects = loadProjects();
-  if (plan === 'free' && projects.length >= 2) {
-    alert('무료 플랜은 최대 2개의 프로젝트를 만들 수 있습니다.\nPro로 업그레이드하면 무제한으로 사용 가능합니다.');
-    return;
-  }
+  // 프로젝트 2개 제한 해제 (테스트) — 복구 시 아래 주석 해제
+  // if (plan === 'free' && projects.length >= 2) {
+  //   alert('무료 플랜은 최대 2개의 프로젝트를 만들 수 있습니다.\nPro로 업그레이드하면 무제한으로 사용 가능합니다.');
+  //   return;
+  // }
   const name = prompt('새 프로젝트 이름:');
   if (!name || !name.trim()) return;
 
@@ -1380,6 +1670,12 @@ function renderProjectView(projectId) {
   headerRow1.appendChild(backBtn);
   headerRow1.appendChild(nameInput);
   headerRow1.appendChild(colToggle);
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn btn-ghost project-header-btn';
+  shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
+  shareBtn.title = '공유';
+  shareBtn.onclick = () => openShareModal(projectId);
+  headerRow1.appendChild(shareBtn);
   headerRow1.appendChild(modeBtn);
   if (isEditMode) {
     const deleteProjectBtn = document.createElement('button');
@@ -1698,6 +1994,36 @@ function buildLinesSection(project, editMode = true) {
     }
   }, { passive: true });
 
+  // 클립보드 히스토리 경로 차단 (Android WebView: paste 이벤트를 우회하고 beforeinput → DOM 삽입)
+  linesEl.addEventListener('beforeinput', e => {
+    if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromPasteAsQuotation') return;
+
+    // 비동기 처리 전에 대상 라인 캡처 (async 이후 포커스 유실 방지)
+    const anchorLine = lastFocusedLine;
+
+    const dt = e.dataTransfer;
+    let pasted = dt?.getData('text/plain') || dt?.getData('text') || '';
+    // text/plain이 없으면 text/html에서 plain text 추출 (웹 복사본 클립보드 히스토리)
+    if (!pasted && dt) {
+      const html = dt.getData('text/html') || '';
+      if (html) pasted = htmlClipboardToText(html);
+    }
+
+    if (pasted) {
+      // dataTransfer에서 텍스트 확보 — 동기 처리
+      e.preventDefault();
+      applyPastedText(pasted, anchorLine);
+      return;
+    }
+
+    // dataTransfer가 완전히 null인 경우 (IME/클립보드 히스토리 경로):
+    // 브라우저 삽입을 막고 async Clipboard API로 직접 읽어서 줄바꿈 보존
+    e.preventDefault();
+    navigator.clipboard?.readText().then(text => {
+      if (text) applyPastedText(text, anchorLine);
+    }).catch(() => {});
+  });
+
   function applyPastedText(pasted, anchorLine) {
     // 줄바꿈 정규화: \r\n, \r, \n 및 Unicode 줄/문단 구분자 처리
     const segments = pasted
@@ -1837,72 +2163,72 @@ function buildLinesSection(project, editMode = true) {
     }
   });
 
-  // 브라우저가 DOM에 직접 삽입한 경우 처리 (Android/iOS 폴백)
+  // input 폴백: beforeinput이 처리 못 한 경우 (dataTransfer null) HTML 잔류 정리
   linesEl.addEventListener('input', e => {
     if (e.inputType !== 'insertFromPaste' && e.inputType !== 'insertFromPasteAsQuotation') return;
-    let line = lastFocusedLine;
-    if (!line || !linesEl.contains(line)) {
-      // 스테일 참조 또는 null — <br>/<div>가 삽입된 라인 탐색
-      line = null;
-      for (const l of linesEl.querySelectorAll('.project-line')) {
-        if (l.querySelector('br') || l.querySelector('div:not(.chord-area):not(.chord-slot)')) {
-          line = l; break;
-        }
-      }
-    }
-    if (!line) return;
 
-    // <br> 태그나 중첩 <div>로 삽입된 줄바꿈 감지 (textContent에는 안 보임)
-    const hasBr = !!line.querySelector('br');
-    const hasNestedDiv = !!line.querySelector('div:not(.chord-area):not(.chord-slot)');
-    const hasTextBreak = /[\r\n]/.test(line.textContent || '');
-    if (!hasBr && !hasNestedDiv && !hasTextBreak) return;
+    // chord-area가 아닌 element child를 가진 라인 = HTML이 삽입된 라인
+    const dirtyLines = Array.from(linesEl.querySelectorAll('.project-line')).filter(line =>
+      Array.from(line.childNodes).some(n => n.nodeType === Node.ELEMENT_NODE && !n.classList.contains('chord-area'))
+    );
+    if (!dirtyLines.length) return;
 
-    // HTML 구조에서 <br>/<div>를 줄바꿈으로 취급해 세그먼트 추출
-    const chordArea = line.querySelector('.chord-area');
-    const segments = [];
-    let current = '';
-
-    const walk = (node) => {
-      if (node === chordArea) return;
-      if (node.nodeType === Node.TEXT_NODE) {
-        current += node.textContent.replace(/[\r\n]/g, '');
-      } else if (node.nodeName === 'BR') {
-        segments.push(current); current = '';
-      } else if (node.nodeName === 'DIV' && !node.classList.contains('chord-area') && !node.classList.contains('chord-slot')) {
-        if (current || segments.length > 0) { segments.push(current); current = ''; }
-        for (const c of node.childNodes) walk(c);
-      } else {
-        for (const c of node.childNodes) walk(c);
-      }
-    };
-
-    for (const c of line.childNodes) walk(c);
-    segments.push(current);
-
-    if (segments.length <= 1) return;
-
-    setLineText(line, segments[0]);
-    let lastLine = line;
     const p = getProject(project.id);
-    for (let i = 1; i < segments.length; i++) {
-      const newLineId = genId();
-      const newLineData = { id: newLineId, text: segments[i], slots: new Array(8).fill(null) };
-      const newDiv = document.createElement('div');
-      newDiv.className = 'project-line';
-      newDiv.dataset.lineId = newLineId;
-      newDiv.appendChild(buildChordArea(newLineData, p || project));
-      newDiv.appendChild(document.createTextNode(segments[i]));
-      lastLine.insertAdjacentElement('afterend', newDiv);
-      lastLine = newDiv;
+    let lastInsertedLine = null;
+
+    for (const line of dirtyLines) {
+      const chordArea = line.querySelector('.chord-area');
+      const segments = [];
+      let cur = '';
+
+      const walk = (node) => {
+        if (node === chordArea) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          cur += node.textContent;
+        } else if (node.nodeName === 'BR') {
+          segments.push(cur); cur = '';
+        } else if (['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI'].includes(node.nodeName) &&
+                   !node.classList.contains('chord-area') && !node.classList.contains('chord-slot')) {
+          if (cur || segments.length > 0) { segments.push(cur); cur = ''; }
+          for (const c of node.childNodes) walk(c);
+          if (cur || segments.length > 0) { segments.push(cur); cur = ''; }
+        } else {
+          // span, b, i, a 등 인라인 요소: 재귀로 텍스트 추출
+          for (const c of node.childNodes) walk(c);
+        }
+      };
+
+      for (const c of line.childNodes) walk(c);
+      if (cur || segments.length === 0) segments.push(cur);
+
+      // 앞뒤 빈 세그먼트 정리
+      while (segments.length > 1 && segments[0] === '') segments.shift();
+      while (segments.length > 1 && segments[segments.length - 1] === '') segments.pop();
+
+      setLineText(line, segments[0] || '');
+      lastInsertedLine = line;
+
+      for (let i = 1; i < segments.length; i++) {
+        const newLineId = genId();
+        const newLineData = { id: newLineId, text: segments[i], slots: new Array(8).fill(null) };
+        const newDiv = document.createElement('div');
+        newDiv.className = 'project-line';
+        newDiv.dataset.lineId = newLineId;
+        newDiv.appendChild(buildChordArea(newLineData, p || project));
+        newDiv.appendChild(document.createTextNode(segments[i]));
+        lastInsertedLine.insertAdjacentElement('afterend', newDiv);
+        lastInsertedLine = newDiv;
+      }
     }
 
-    const sel = window.getSelection();
-    const endRange = document.createRange();
-    endRange.selectNodeContents(lastLine);
-    endRange.collapse(false);
-    if (sel) { sel.removeAllRanges(); sel.addRange(endRange); }
-    saveAllLines(project.id, linesEl);
+    if (lastInsertedLine) {
+      const sel = window.getSelection();
+      const endRange = document.createRange();
+      endRange.selectNodeContents(lastInsertedLine);
+      endRange.collapse(false);
+      if (sel) { sel.removeAllRanges(); sel.addRange(endRange); }
+      saveAllLines(project.id, linesEl);
+    }
   });
 
   return linesEl;
@@ -2179,6 +2505,10 @@ function setupThumbTouchDrag(thumb, chord, projectId) {
 
     if (mode === null && Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) {
       mode = 'drag';
+      // 텍스트 입력 포커스 해제 — 키보드 닫기 및 화면 이동 방지
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
       startGhost(t.clientX, t.clientY);
     }
 
@@ -2935,10 +3265,180 @@ function saveEditModal() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 공유 기능
+// ═══════════════════════════════════════════════════════════════
+
+function encodeOpenMute(arr) {
+  return arr.map(v => v === 'mute' ? 'm' : 'o').join('');
+}
+function decodeOpenMute(str) {
+  return typeof str === 'string'
+    ? str.split('').map(c => c === 'm' ? 'mute' : 'open')
+    : str;
+}
+function toBase64url(str) {
+  return btoa(unescape(encodeURIComponent(str)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+function fromBase64url(b64url) {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  return decodeURIComponent(escape(atob(b64 + '=='.slice(0, (4 - b64.length % 4) % 4))));
+}
+
+function buildSharePayload(project) {
+  const idToIdx = {};
+  project.chords.forEach((c, i) => idToIdx[c.id] = i);
+  const chords = project.chords.map((c, i) => ({
+    i, name: c.name, root: c.root, triad: c.triad, seventh: c.seventh,
+    func: c.func, tensions: c.tensions, bass: c.bass, accidental: c.accidental,
+    dots: c.dots, openMute: encodeOpenMute(c.openMute),
+    barre: c.barre, fretNumber: c.fretNumber, fingerNumMode: c.fingerNumMode
+  }));
+  const arr = project.arrangement.map(line =>
+    (line.slots || new Array(8).fill(null))
+      .map(id => id !== null && idToIdx[id] !== undefined ? idToIdx[id] : null)
+  );
+  return JSON.stringify({ v: 1, bpm: project.bpm ?? 120, capo: project.capo ?? 0,
+                          col: project.colCount || 4, chords, arr });
+}
+function generateShareCode(project) {
+  return 'chorditor:v1:' + toBase64url(buildSharePayload(project));
+}
+function generateShareUrl(project) {
+  return 'https://solka-dayco.github.io/chord_editor/share/?share=' + toBase64url(buildSharePayload(project));
+}
+
+function parseShareCode(raw) {
+  let b64;
+  if (raw.startsWith('chorditor:v1:')) b64 = raw.slice(13).trim();
+  else if (raw.includes('?share=')) b64 = new URL(raw).searchParams.get('share');
+  else b64 = raw.trim();
+  if (!b64) return null;
+  try {
+    const payload = JSON.parse(fromBase64url(b64));
+    return payload.v === 1 ? payload : null;
+  } catch(e) { return null; }
+}
+
+function openShareModal(projectId) {
+  const project = getProject(projectId);
+  if (!project) return;
+  document.getElementById('share-code-input').value = generateShareCode(project);
+  document.getElementById('share-url-input').value  = generateShareUrl(project);
+  document.getElementById('modal-share').classList.remove('hidden');
+  lucide.createIcons();
+}
+function _fallbackCopy(text) {
+  const ta = Object.assign(document.createElement('textarea'), { value: text });
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+}
+function _flashBtn(id, msg) {
+  const btn = document.getElementById(id), orig = btn.textContent;
+  btn.textContent = msg; setTimeout(() => btn.textContent = orig, 1500);
+}
+async function copyShareCode() {
+  const val = document.getElementById('share-code-input').value;
+  if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
+  else _fallbackCopy(val);
+  _flashBtn('share-code-copy-btn', '복사됨!');
+}
+async function copyShareUrl() {
+  const val = document.getElementById('share-url-input').value;
+  if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
+  else _fallbackCopy(val);
+  _flashBtn('share-url-copy-btn', '복사됨!');
+}
+
+let _pendingImportPayload = null;
+
+function openImportModal(payload) {
+  _pendingImportPayload = payload;
+  document.getElementById('import-meta').textContent =
+    `BPM ${payload.bpm} · Capo ${payload.capo} · ${payload.col}칸 · 코드 ${payload.chords.length}개 · ${payload.arr.length}줄`;
+  const sel = document.getElementById('import-project-select');
+  sel.innerHTML = '<option value="">프로젝트 선택…</option>';
+  loadProjects().forEach(p => {
+    sel.appendChild(Object.assign(document.createElement('option'), { value: p.id, textContent: p.name }));
+  });
+  document.getElementById('import-new-name').value = '';
+  document.getElementById('modal-import').classList.remove('hidden');
+  lucide.createIcons();
+}
+
+function confirmImport(mode) {
+  const payload = _pendingImportPayload; if (!payload) return;
+  const opts = {
+    applyBpm:  document.getElementById('import-apply-bpm').checked,
+    applyCapo: document.getElementById('import-apply-capo').checked,
+    applyCol:  document.getElementById('import-apply-col').checked,
+  };
+  let targetId;
+  if (mode === 'new') {
+    const name = document.getElementById('import-new-name').value.trim();
+    if (!name) { alert('프로젝트 이름을 입력하세요.'); return; }
+    const p = { id: genId(), name, pinned: false, pinnedOrder: 0, capo: 0, bpm: 120,
+                colCount: 4, createdAt: Date.now(), updatedAt: Date.now(), chords: [], arrangement: [] };
+    const list = loadProjects(); list.push(p); saveProjects(list); targetId = p.id;
+  } else {
+    targetId = document.getElementById('import-project-select').value;
+    if (!targetId) { alert('프로젝트를 선택하세요.'); return; }
+  }
+  applyImportPayload(targetId, payload, opts);
+  closeModal('modal-import'); _pendingImportPayload = null;
+  renderSidebar(); populateProjectSelect();
+  navigateTo('project', targetId);
+}
+
+function applyImportPayload(projectId, payload, opts) {
+  const p = getProject(projectId); if (!p) return;
+  if (opts.applyBpm)  p.bpm      = payload.bpm;
+  if (opts.applyCapo) p.capo     = payload.capo;
+  if (opts.applyCol)  p.colCount = payload.col;
+  const indexToNewId = {};
+  payload.chords.forEach(pc => {
+    const newId = genId(); indexToNewId[pc.i] = newId;
+    p.chords.push({ id: newId, name: pc.name, root: pc.root, triad: pc.triad,
+      seventh: pc.seventh, func: pc.func, tensions: pc.tensions, bass: pc.bass,
+      accidental: pc.accidental, dots: pc.dots, openMute: decodeOpenMute(pc.openMute),
+      barre: pc.barre, fretNumber: pc.fretNumber, fingerNumMode: pc.fingerNumMode });
+  });
+  payload.arr.forEach(slotRow => {
+    const slots = (slotRow || []).map(idx =>
+      idx !== null && indexToNewId[idx] !== undefined ? indexToNewId[idx] : null);
+    while (slots.length < 8) slots.push(null);
+    p.arrangement.push({ id: genId(), text: '', slots: slots.slice(0, 8) });
+  });
+  p.updatedAt = Date.now(); updateProject(p);
+}
+
+function triggerManualImport() {
+  const raw = document.getElementById('paste-share-input').value.trim();
+  if (!raw) return;
+  const payload = parseShareCode(raw);
+  if (!payload) { alert('유효하지 않은 공유 코드입니다.'); return; }
+  document.getElementById('paste-share-input').value = '';
+  openImportModal(payload);
+}
+
+// Android Activity → WebView 진입점
+window._handleShareImport = function(rawCode) {
+  const payload = parseShareCode(rawCode);
+  if (payload) openImportModal(payload);
+  else alert('공유 코드가 올바르지 않습니다.');
+};
+
+// ═══════════════════════════════════════════════════════════════
 // 초기 렌더링
 // ═══════════════════════════════════════════════════════════════
 (function init() {
   renderSidebar();
   populateProjectSelect();
   lucide.createIcons();
+  const shareParam = new URLSearchParams(location.search).get('share');
+  if (shareParam) {
+    history.replaceState(null, '', location.pathname);
+    const payload = parseShareCode(shareParam);
+    if (payload) openImportModal(payload);
+    else alert('공유 코드가 올바르지 않습니다.');
+  }
 })();

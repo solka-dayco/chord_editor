@@ -1,5 +1,49 @@
 package com.chorditor.app;
 
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {}
+public class MainActivity extends BridgeActivity {
+    private String pendingCode = null;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        pendingCode = extractCode(getIntent());
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (pendingCode != null) {
+            final String code = pendingCode;
+            pendingCode = null;
+            new Handler().postDelayed(() -> deliverCode(code), 800);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String code = extractCode(intent);
+        if (code != null) deliverCode(code);
+    }
+
+    private String extractCode(Intent intent) {
+        if (intent == null) return null;
+        Uri data = intent.getData();
+        if (data == null) return null;
+        if ("chorditor".equals(data.getScheme()) && "import".equals(data.getHost()))
+            return data.getQueryParameter("code");
+        return null;
+    }
+
+    private void deliverCode(String code) {
+        String safe = code.replace("'", "\\'");
+        getBridge().getWebView().evaluateJavascript("window._handleShareImport('" + safe + "')", null);
+    }
+}
