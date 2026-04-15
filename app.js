@@ -176,8 +176,14 @@ class GuitarChordSuggester {
     if (q === 'minor' && (f === 'add9' || f === 'sus4')) return false;
     if (f === 'sus4' && q !== 'major') return false;
     if (f === 'add9' && q !== 'major') return false;
+    if (f === 'add9' && s !== null) return false;
+    if (f === 'sus4' && f === 'b5') return false;
     if (q === 'dim' && f === 'b5') return false;
-    if (q === 'aug' && (s === 'M7' || s === '6')) return false;
+    if (s === 'M7' && f === 'b5') return false;
+    if (s === '6' && f === 'b5') return false;
+    if (s === 'M7' && f === 'sus4') return false;
+    if (q === 'aug' && (s === 'M7' || s === '6' )) return false;
+    if (q === 'aug' && f === 'b5') return false;
     if (q === 'dim' && s === '6') return false;
     if (s === '6' && f === 'sus4') return false; // 6코드는 완성된 장3화음 기반, sus4와 공존 불가
     return true;
@@ -188,6 +194,10 @@ class GuitarChordSuggester {
     if (!s || s === 'dim7' || s === '6') return false;
     if (f === 'add9' && ['b9','9','#9'].includes(t)) return false;
     if (s === '6' && t === 'b13') return false;
+    if (q === 'major' && s === '7' && f === 'add9') return false;
+    if (f === 'sus4' && t) return false;
+    if (f === 'b5' && t) return false;
+    if (q === 'dim' && s === '7') return false;
     return this._allowedTensions(q, s, f).includes(t);
   }
 
@@ -263,8 +273,9 @@ class GuitarChordSuggester {
     if (q === 'major' && s === '7' && f === 'b5' && !obsSet.has(7) && obsSet.has(6)) score -= 12;
     if (q === 'dim' && s === '7' && t) score -= 18;
     if (anal.lowestPc === root && !obsSet.has(3) && !obsSet.has(4)) score += 6;
+    if (q === 'minor' && s === '6' && !slash) score += 5;
     if (f === 'sus4' && t) score -= 6; // sus4 + tension 과해석 억제
-    if (!t) score += 3;                // tension 없는 단순 구조 우대
+    //if (!t) score += 3;                // tension 없는 단순 구조 우대
 
     if (slash !== null) {
       if (anal.lowestPc !== slash) return null;
