@@ -32,7 +32,18 @@ const SH = () => (TB() - TT()) / (STRINGS - 1);
 const DS = () => Math.round(SH() * 0.85);
 
 function resizeCanvas() {
-  const availW = canvas.parentElement.clientWidth || BASE_W;
+  let availW;
+  if (isMobileOrTablet()) {
+    // 모바일/태블릿: 가용 너비에 맞게 반응형
+    // canvas와 canvas-inner의 고정 너비를 모두 해제해야
+    // clientWidth가 캔버스 자신의 크기가 아닌 실제 컨테이너 너비를 반환함
+    canvas.style.width = '';
+    canvas.parentElement.style.width = '';
+    availW = canvas.parentElement.clientWidth || BASE_W;
+  } else {
+    // 데스크탑 웹브라우저: 캔버스 크기 고정 (BASE_W 기준)
+    availW = BASE_W;
+  }
   const displayW = Math.round(availW * MAIN_DISPLAY_SCALE);
   canvas.style.width  = displayW + 'px';
   canvas.style.height = 'auto';
@@ -3309,6 +3320,38 @@ function fromBase64url(b64url) {
   return decodeURIComponent(escape(atob(b64 + '=='.slice(0, (4 - b64.length % 4) % 4))));
 }
 
+// deflate-raw 압축 → base64url (CompressionStream 미지원 시 무압축 fallback)
+async function toBase64urlZ(str) {
+  try {
+    const bytes = new TextEncoder().encode(str);
+    const cs = new CompressionStream('deflate-raw');
+    const writer = cs.writable.getWriter();
+    writer.write(bytes); writer.close();
+    const buf = await new Response(cs.readable).arrayBuffer();
+    const binary = Array.from(new Uint8Array(buf), b => String.fromCharCode(b)).join('');
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  } catch(e) {
+    return toBase64url(str); // fallback
+  }
+}
+// 압축 해제 (실패 시 무압축으로 재시도)
+async function fromBase64urlZ(b64url) {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  try {
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    writer.write(bytes); writer.close();
+    const buf = await new Response(ds.readable).arrayBuffer();
+    return new TextDecoder().decode(buf);
+  } catch(e) {
+    return fromBase64url(b64url); // fallback: 무압축 legacy
+  }
+}
+
 function buildSharePayload(project) {
   const idToIdx = {};
   project.chords.forEach((c, i) => idToIdx[c.id] = i);
@@ -3322,35 +3365,68 @@ function buildSharePayload(project) {
     (line.slots || new Array(8).fill(null))
       .map(id => id !== null && idToIdx[id] !== undefined ? idToIdx[id] : null)
   );
-  return JSON.stringify({ v: 1, bpm: project.bpm ?? 120, capo: project.capo ?? 0,
+  return JSON.stringify({ v: 2, bpm: project.bpm ?? 120, capo: project.capo ?? 0,
                           col: project.colCount || 4, chords, arr });
 }
-function generateShareCode(project) {
-  return 'chorditor:v1:' + toBase64url(buildSharePayload(project));
+async function generateShareCode(project) {
+  return 'chorditor:v2:' + await toBase64urlZ(buildSharePayload(project));
 }
-function generateShareUrl(project) {
-  return 'https://solka-dayco.github.io/chord_editor/share/?share=' + toBase64url(buildSharePayload(project));
+async function generateShareUrl(project) {
+  return 'https://solka-dayco.github.io/chord_editor/share/?share=' + await toBase64urlZ(buildSharePayload(project));
 }
 
-function parseShareCode(raw) {
+async function parseShareCode(raw) {
   let b64;
-  if (raw.startsWith('chorditor:v1:')) b64 = raw.slice(13).trim();
+  if (raw.startsWith('chorditor:v2:')) b64 = raw.slice(13).trim();
+  else if (raw.startsWith('chorditor:v1:')) {
+    // v1: 무압축 legacy
+    try {
+      const payload = JSON.parse(fromBase64url(raw.slice(13).trim()));
+      return payload.v === 1 ? payload : null;
+    } catch(e) { return null; }
+  }
   else if (raw.includes('?share=')) b64 = new URL(raw).searchParams.get('share');
   else b64 = raw.trim();
   if (!b64) return null;
   try {
-    const payload = JSON.parse(fromBase64url(b64));
-    return payload.v === 1 ? payload : null;
+    const json = await fromBase64urlZ(b64);
+    const payload = JSON.parse(json);
+    return (payload.v === 1 || payload.v === 2) ? payload : null;
   } catch(e) { return null; }
 }
 
-function openShareModal(projectId) {
+async function openShareModal(projectId) {
   const project = getProject(projectId);
   if (!project) return;
-  document.getElementById('share-code-input').value = generateShareCode(project);
-  document.getElementById('share-url-input').value  = generateShareUrl(project);
+  const code    = await generateShareCode(project);
+  const fullUrl = await generateShareUrl(project);
+  const codeEl     = document.getElementById('share-code-input');
+  const urlEl      = document.getElementById('share-url-input');
+  const urlCopyBtn = document.getElementById('share-url-copy-btn');
+  // 공유 코드: 앞 20자 + … + 뒤 6자 (복사용 전체값은 data-full에 보관)
+  const shorten = s => s.length > 30 ? s.slice(0, 20) + '…' + s.slice(-6) : s;
+  codeEl.value        = shorten(code);
+  codeEl.dataset.full = code;
+  // URL 필드: 로딩 중 표시 후 is.gd 단축 URL로 교체
+  urlEl.value         = '단축 링크 생성 중…';
+  urlEl.dataset.full  = fullUrl;   // fallback용 미리 저장
+  urlCopyBtn.disabled = true;
   document.getElementById('modal-share').classList.remove('hidden');
   lucide.createIcons();
+  // is.gd API 호출
+  try {
+    const res  = await fetch('https://is.gd/create.php?format=simple&url=' + encodeURIComponent(fullUrl));
+    const text = (await res.text()).trim();
+    if (text.startsWith('ERROR') || !text.startsWith('http')) throw new Error(text);
+    urlEl.value        = text;   // 예: https://is.gd/aBcDeF (~21자)
+    urlEl.dataset.full = text;   // 단축 URL 자체를 복사 대상으로
+  } catch (e) {
+    // API 실패 시 전체 URL 단축 표시로 fallback
+    urlEl.value        = shorten(fullUrl);
+    urlEl.dataset.full = fullUrl;
+  } finally {
+    urlCopyBtn.disabled = false;
+  }
 }
 function _fallbackCopy(text) {
   const ta = Object.assign(document.createElement('textarea'), { value: text });
@@ -3361,13 +3437,15 @@ function _flashBtn(id, msg) {
   btn.textContent = msg; setTimeout(() => btn.textContent = orig, 1500);
 }
 async function copyShareCode() {
-  const val = document.getElementById('share-code-input').value;
+  const el = document.getElementById('share-code-input');
+  const val = el.dataset.full || el.value;
   if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
   else _fallbackCopy(val);
   _flashBtn('share-code-copy-btn', '복사됨!');
 }
 async function copyShareUrl() {
-  const val = document.getElementById('share-url-input').value;
+  const el = document.getElementById('share-url-input');
+  const val = el.dataset.full || el.value;
   if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
   else _fallbackCopy(val);
   _flashBtn('share-url-copy-btn', '복사됨!');
@@ -3441,18 +3519,18 @@ function applyImportPayload(projectId, payload, opts) {
   p.updatedAt = Date.now(); updateProject(p);
 }
 
-function triggerManualImport() {
+async function triggerManualImport() {
   const raw = document.getElementById('paste-share-input').value.trim();
   if (!raw) return;
-  const payload = parseShareCode(raw);
+  const payload = await parseShareCode(raw);
   if (!payload) { alert('유효하지 않은 공유 코드입니다.'); return; }
   document.getElementById('paste-share-input').value = '';
   openImportModal(payload);
 }
 
 // Android Activity → WebView 진입점
-window._handleShareImport = function(rawCode) {
-  const payload = parseShareCode(rawCode);
+window._handleShareImport = async function(rawCode) {
+  const payload = await parseShareCode(rawCode);
   if (payload) openImportModal(payload);
   else alert('공유 코드가 올바르지 않습니다.');
 };
@@ -3467,8 +3545,9 @@ window._handleShareImport = function(rawCode) {
   const shareParam = new URLSearchParams(location.search).get('share');
   if (shareParam) {
     history.replaceState(null, '', location.pathname);
-    const payload = parseShareCode(shareParam);
-    if (payload) openImportModal(payload);
-    else alert('공유 코드가 올바르지 않습니다.');
+    parseShareCode(shareParam).then(payload => {
+      if (payload) openImportModal(payload);
+      else alert('공유 코드가 올바르지 않습니다.');
+    });
   }
 })();
