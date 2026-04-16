@@ -1840,6 +1840,7 @@ function buildChordArea(line, project, editMode = true) {
     const slot = document.createElement('div');
     slot.dataset.slotIdx = dataIdx;
     slot.dataset.lineId = line.id;
+    slot.dataset.chordId = chordId || ''; // DOM fallback for saveAllLines
 
     if (chordId && project.chords) {
       const chord = project.chords.find(c => c.id === chordId);
@@ -2252,10 +2253,22 @@ function saveAllLines(projectId, linesEl) {
   p.arrangement = Array.from(lineDivs).map(div => {
     if (!div.dataset.lineId) div.dataset.lineId = genId();
     const existing = p.arrangement.find(l => l.id === div.dataset.lineId);
+    let slots;
+    if (existing) {
+      slots = existing.slots;
+    } else {
+      // DOM fallback: 붙여넣기 등으로 새 div가 생성된 경우 data-chord-id에서 복원
+      slots = new Array(8).fill(null);
+      div.querySelectorAll('[data-slot-idx]').forEach(slotEl => {
+        const idx = parseInt(slotEl.dataset.slotIdx);
+        const cid = slotEl.dataset.chordId || '';
+        if (!isNaN(idx) && cid) slots[idx] = cid;
+      });
+    }
     return {
       id: div.dataset.lineId,
       text: getLineText(div),
-      slots: existing?.slots || new Array(8).fill(null)
+      slots
     };
   });
   p.updatedAt = Date.now();
@@ -3413,11 +3426,17 @@ function applyImportPayload(projectId, payload, opts) {
       accidental: pc.accidental, dots: pc.dots, openMute: decodeOpenMute(pc.openMute),
       barre: pc.barre, fretNumber: pc.fretNumber, fingerNumMode: pc.fingerNumMode });
   });
-  payload.arr.forEach(slotRow => {
+  payload.arr.forEach((slotRow, rowIdx) => {
     const slots = (slotRow || []).map(idx =>
       idx !== null && indexToNewId[idx] !== undefined ? indexToNewId[idx] : null);
     while (slots.length < 8) slots.push(null);
-    p.arrangement.push({ id: genId(), text: '', slots: slots.slice(0, 8) });
+    if (rowIdx < p.arrangement.length) {
+      // 기존 라인이 있으면 텍스트는 보존하고 슬롯만 덮어쓰기
+      p.arrangement[rowIdx].slots = slots.slice(0, 8);
+    } else {
+      // 기존 라인보다 많으면 새 빈 라인 추가
+      p.arrangement.push({ id: genId(), text: '', slots: slots.slice(0, 8) });
+    }
   });
   p.updatedAt = Date.now(); updateProject(p);
 }
