@@ -77,7 +77,7 @@
       document.getElementById('msg').textContent = '올바르지 않은 공유 링크입니다.';
     } else {
       const deepLink = 'chorditor://import?code=' + share;
-      const shareCode = 'chorditor:v1:' + share;
+      const shareCode = share;
 
       document.getElementById('open-btn').href = deepLink;
       document.getElementById('code-display').textContent = shareCode;

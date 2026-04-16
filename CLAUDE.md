@@ -138,3 +138,7 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 - touchstart.preventDefault()는 이후 합성 click 이벤트를 억제한다. 터치(touchstart→touchend)와 마우스(mousedown→click)를 반드시 분리 처리할 것.
 
 - 버튼에 touchstart.preventDefault()를 걸어도 Android WebView는 상위 contenteditable 요소에 포커스를 주어 키보드가 뜬다. touchstart 시점에 즉시 linesEl.contentEditable = 'false'로 비활성화하고, 메뉴가 닫힐 때 'true'로   복원하는 것이 유일하게 확실한 해결법이다.
+
+# 홈 아이콘 흰 화면 버그 (One UI 7 / Galaxy S25)
+- `mipmap-anydpi-v26/ic_launcher.xml`의 `<monochrome>` 레이어가 Samsung 런처에서 렌더링 실패 시 아이콘 전체를 흰 화면으로 표시함.
+- 해결: `<monochrome>` 레이어 제거, foreground는 `@mipmap/ic_launcher_foreground` 직접 참조 유지.

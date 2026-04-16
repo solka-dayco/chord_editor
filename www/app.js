@@ -3667,7 +3667,7 @@ function buildSharePayload(project) {
                           col: project.colCount || 4, chords, arr });
 }
 async function generateShareCode(project) {
-  return 'chorditor:v2:' + await toBase64urlZ(buildSharePayload(project));
+  return await toBase64urlZ(buildSharePayload(project));
 }
 async function generateShareUrl(project) {
   return 'https://solka-dayco.github.io/chord_editor/share/?share=' + await toBase64urlZ(buildSharePayload(project));
@@ -3675,6 +3675,7 @@ async function generateShareUrl(project) {
 
 async function parseShareCode(raw) {
   let b64;
+  // legacy prefix 지원 (이전에 생성된 공유 코드 호환)
   if (raw.startsWith('chorditor:v2:')) b64 = raw.slice(13).trim();
   else if (raw.startsWith('chorditor:v1:')) {
     // v1: 무압축 legacy
