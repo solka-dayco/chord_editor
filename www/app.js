@@ -359,7 +359,8 @@ function getChordFretArray() {
   const arr = [];
   for (let s = 5; s >= 0; s--) {
     if (openMute[s] === 'mute') { arr.push(null); continue; }
-    const dot = dots.find(d => d.s === s);
+    const sd = dots.filter(d => d.s === s);
+    const dot = sd.length > 0 ? sd.reduce((a, b) => a.f >= b.f ? a : b) : undefined;
     const bf  = barreMap[s];
     if (dot !== undefined && bf !== undefined) arr.push(calcActualFret(Math.max(dot.f, bf)));
     else if (dot !== undefined)  arr.push(calcActualFret(dot.f));
@@ -814,12 +815,21 @@ canvas.addEventListener('click', e => {
 
   const idx = dots.findIndex(d => d.s === si && d.f === fi);
   if (idx !== -1) {
+    // 같은 위치 토글 오프: 해당 dot만 제거
     dots.splice(idx, 1);
-    openMute[si] = 'open';
+    if (!dots.some(d => d.s === si)) openMute[si] = 'open';
   } else {
-    dots = dots.filter(d => d.s !== si);
-    openMute[si] = 'open';
-    dots.push({ s: si, f: fi, n: selectedFinger });
+    // 바레가 이 줄을 커버하고 있고 클릭 프렛이 바레 우측이면 → 바레 dot 유지, 우측 dot만 교체
+    const barreF = barreMapCheck[si];
+    if (barreF !== undefined && fi > barreF) {
+      dots = dots.filter(d => d.s !== si || d.f === barreF);
+      dots.push({ s: si, f: fi, n: selectedFinger });
+    } else {
+      // 바레 없음 또는 바레 프렛 클릭: 한 줄 1개
+      dots = dots.filter(d => d.s !== si);
+      openMute[si] = 'open';
+      dots.push({ s: si, f: fi, n: selectedFinger });
+    }
   }
   if (rootMode) rootIndex = calcRootIndex();
   draw();
@@ -931,7 +941,8 @@ async function playChord(chord) {
   const barreMap = buildBarreMap(chord.dots, chord.barre || {});
   for (let s = 0; s < STRINGS; s++) {
     if (chord.openMute[s] === 'mute') continue;
-    const dot = chord.dots.find(d => d.s === s);
+    const sd = chord.dots.filter(d => d.s === s);
+    const dot = sd.length > 0 ? sd.reduce((a, b) => a.f >= b.f ? a : b) : undefined;
     const barreFret = barreMap[s];
     let fret = 0;
     // 가장 우측(높은 프렛) dot만 소리남
@@ -1033,7 +1044,8 @@ function calcStringNotes() {
   const barreMap = buildBarreMap(dots, barreActive);
   for (let s = 0; s < STRINGS; s++) {
     if (openMute[s] === 'mute') continue;
-    const dot = dots.find(d => d.s === s);
+    const sd = dots.filter(d => d.s === s);
+    const dot = sd.length > 0 ? sd.reduce((a, b) => a.f >= b.f ? a : b) : undefined;
     const barreFret = barreMap[s];
     let fret = 0;
     // 가장 우측(높은 프렛) dot만 소리남
@@ -1332,19 +1344,24 @@ function reorderPinned(dragId, targetId) {
 // 프로젝트 생성
 // ═══════════════════════════════════════════════════════════════
 function promptCreateProject() {
-  const plan = getPlan();
-  const projects = loadProjects();
-  // 프로젝트 2개 제한 해제 (테스트) — 복구 시 아래 주석 해제
-  // if (plan === 'free' && projects.length >= 2) {
-  //   alert('무료 플랜은 최대 2개의 프로젝트를 만들 수 있습니다.\nPro로 업그레이드하면 무제한으로 사용 가능합니다.');
-  //   return;
-  // }
-  const name = prompt('새 프로젝트 이름:');
-  if (!name || !name.trim()) return;
+  const input = document.getElementById('create-project-name-input');
+  input.value = '';
+  document.getElementById('modal-create-project').classList.remove('hidden');
+  lucide.createIcons();
+  requestAnimationFrame(() => input.focus());
+}
 
+function confirmCreateProject() {
+  const input = document.getElementById('create-project-name-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  closeModal('modal-create-project');
+
+  const projects = loadProjects();
   const newProject = {
     id: genId(),
-    name: name.trim(),
+    name,
     pinned: false,
     pinnedOrder: 0,
     capo: 0,
@@ -1693,9 +1710,8 @@ function renderProjectView(projectId) {
   headerRow1.appendChild(nameInput);
   headerRow1.appendChild(colToggle);
   const shareBtn = document.createElement('button');
-  shareBtn.className = 'btn btn-ghost project-header-btn';
-  shareBtn.innerHTML = '<i data-lucide="share-2"></i>';
-  shareBtn.title = '공유';
+  shareBtn.className = 'btn btn-primary project-header-btn';
+  shareBtn.textContent = '공유하기';
   shareBtn.onclick = () => openShareModal(projectId);
   headerRow1.appendChild(shareBtn);
   headerRow1.appendChild(modeBtn);
@@ -1928,6 +1944,50 @@ function buildChordArea(line, project, editMode = true) {
     }
     area.appendChild(slot);
   });
+
+  // editMode: chord-area를 wrapper로 감싸고 3-dot 메뉴 버튼 추가
+  if (editMode) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chord-row-wrapper';
+    wrapper.appendChild(area);
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'row-menu-btn';
+    menuBtn.setAttribute('aria-label', '행 메뉴');
+    menuBtn.innerHTML = '<i data-lucide="more-vertical"></i>';
+    // 터치: touchstart에서 즉시 linesEl.contentEditable=false → 키보드 원천 차단
+    // (touchstart.preventDefault()만으로는 Android WebView 상위 contenteditable 포커스 못 막음)
+    let _btnTouchPending = false;
+    menuBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      _btnTouchPending = true;
+      // touchstart 시점에 contentEditable 비활성화 → 포커스/키보드 차단
+      const linesEl = menuBtn.closest('.project-lines');
+      if (linesEl) linesEl.contentEditable = 'false';
+    }, { passive: false });
+    menuBtn.addEventListener('touchend', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (_btnTouchPending) {
+        _btnTouchPending = false;
+        openRowMenu({ currentTarget: menuBtn }, line.id, project.id);
+      }
+    }, { passive: false });
+    menuBtn.addEventListener('touchcancel', () => {
+      _btnTouchPending = false;
+      // 메뉴 열리지 않은 채 취소 → contentEditable 즉시 복원
+      const linesEl = menuBtn.closest('.project-lines');
+      if (linesEl) linesEl.contentEditable = 'true';
+    });
+    // 마우스: mousedown으로 포커스 방지, click에서 메뉴 호출
+    menuBtn.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      openRowMenu(e, line.id, project.id);
+    });
+    wrapper.appendChild(menuBtn);
+    return wrapper;
+  }
   return area;
 }
 
@@ -2102,15 +2162,23 @@ function buildLinesSection(project, editMode = true) {
     let lastLine = currentLine;
     for (let i = 1; i < segments.length; i++) {
       const text = i === segments.length - 1 ? segments[i] + after : segments[i];
-      const newLineId = genId();
-      const newLine = { id: newLineId, text, slots: new Array(8).fill(null) };
-      const newDiv = document.createElement('div');
-      newDiv.className = 'project-line';
-      newDiv.dataset.lineId = newLineId;
-      newDiv.appendChild(buildChordArea(newLine, p || project));
-      newDiv.appendChild(document.createTextNode(text));
-      lastLine.insertAdjacentElement('afterend', newDiv);
-      lastLine = newDiv;
+      // 다음 기존 행이 있으면 새 행을 만들지 않고 텍스트만 덮어씌움 (코드 슬롯 보존)
+      const nextExisting = lastLine.nextElementSibling;
+      if (nextExisting && nextExisting.classList.contains('project-line')) {
+        setLineText(nextExisting, text);
+        lastLine = nextExisting;
+      } else {
+        // 기존 행 없음 → 새 행 생성
+        const newLineId = genId();
+        const newLine = { id: newLineId, text, slots: new Array(8).fill(null) };
+        const newDiv = document.createElement('div');
+        newDiv.className = 'project-line';
+        newDiv.dataset.lineId = newLineId;
+        newDiv.appendChild(buildChordArea(newLine, p || project));
+        newDiv.appendChild(document.createTextNode(text));
+        lastLine.insertAdjacentElement('afterend', newDiv);
+        lastLine = newDiv;
+      }
     }
     if (segments.length === 1) setLineText(currentLine, before + segments[0] + after);
 
@@ -2302,29 +2370,89 @@ function insertNewLineAtCursor(linesEl, projectId) {
   const before = fullText.substring(0, cursorOff);
   const after = fullText.substring(cursorOff);
   setLineText(currentLine, before);
-  const newLineId = genId();
   const p = getProject(projectId);
-  const newLine = { id: newLineId, text: after, slots: new Array(8).fill(null) };
-  const newDiv = document.createElement('div');
-  newDiv.className = 'project-line';
-  newDiv.dataset.lineId = newLineId;
-  newDiv.appendChild(buildChordArea(newLine, p || { id: projectId, chords: [] }));
-  if (after) {
-    newDiv.appendChild(document.createTextNode(after));
+
+  // 다음 줄이 있으면 텍스트를 한 칸씩 아래로 민다 (새 DOM 행 추가 없이)
+  const nextSibling = currentLine.nextElementSibling;
+  if (nextSibling) {
+    // 마지막 행까지 순회해 텍스트를 한 칸씩 밀고, 마지막 남은 텍스트를 새 행에 추가
+    // 먼저 기존 행들의 텍스트를 수집
+    const rows = [];
+    let cur = nextSibling;
+    while (cur) {
+      rows.push(cur);
+      cur = cur.nextElementSibling;
+    }
+    // 마지막으로 밀려난 텍스트를 담을 변수
+    let displaced = after;
+    for (const row of rows) {
+      const rowText = getLineText(row);
+      setLineText(row, displaced);
+      displaced = rowText;
+    }
+    // displaced가 남아 있으면 새 행을 맨 끝에 추가
+    const lastRow = rows[rows.length - 1];
+    const newLineId = genId();
+    const newLine = { id: newLineId, text: displaced, slots: new Array(8).fill(null) };
+    const newDiv = document.createElement('div');
+    newDiv.className = 'project-line';
+    newDiv.dataset.lineId = newLineId;
+    newDiv.appendChild(buildChordArea(newLine, p || { id: projectId, chords: [] }));
+    if (displaced) {
+      newDiv.appendChild(document.createTextNode(displaced));
+    } else {
+      newDiv.appendChild(document.createElement('br'));
+    }
+    lastRow.insertAdjacentElement('afterend', newDiv);
+    // 커서를 nextSibling(밀린 후 첫 번째 기존 행)의 시작으로 이동
+    const newRange = document.createRange();
+    const firstTextNode = Array.from(nextSibling.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+    if (firstTextNode) {
+      newRange.setStart(firstTextNode, 0);
+    } else {
+      const br = nextSibling.querySelector('br');
+      if (br) newRange.setStartBefore(br);
+      else { newRange.selectNodeContents(nextSibling); newRange.collapse(true); }
+    }
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    requestAnimationFrame(() => nextSibling.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   } else {
-    newDiv.appendChild(document.createElement('br'));
+    // 다음 줄 없음: 새 행을 바로 추가
+    const newLineId = genId();
+    const newLine = { id: newLineId, text: after, slots: new Array(8).fill(null) };
+    const newDiv = document.createElement('div');
+    newDiv.className = 'project-line';
+    newDiv.dataset.lineId = newLineId;
+    newDiv.appendChild(buildChordArea(newLine, p || { id: projectId, chords: [] }));
+    if (after) {
+      newDiv.appendChild(document.createTextNode(after));
+    } else {
+      newDiv.appendChild(document.createElement('br'));
+    }
+    currentLine.insertAdjacentElement('afterend', newDiv);
+    const newRange = document.createRange();
+    if (after) {
+      newRange.setStart(newDiv.lastChild, 0);
+    } else {
+      newRange.setStartBefore(newDiv.lastChild);
+    }
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    requestAnimationFrame(() => newDiv.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
-  currentLine.insertAdjacentElement('afterend', newDiv);
-  const newRange = document.createRange();
-  if (after) {
-    newRange.setStart(newDiv.lastChild, 0);
-  } else {
-    newRange.setStartBefore(newDiv.lastChild);
-  }
-  newRange.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(newRange);
   saveAllLines(projectId, linesEl);
+}
+
+// 코드 슬롯이 하나라도 채워져 있으면 true
+function lineHasChords(lineDiv, projectId) {
+  const p = getProject(projectId);
+  const line = p?.arrangement.find(l => l.id === lineDiv.dataset.lineId);
+  if (line?.slots?.some(s => s !== null)) return true;
+  // DOM 폴백 (saveAllLines 전 상태)
+  return Array.from(lineDiv.querySelectorAll('[data-slot-idx]')).some(el => el.dataset.chordId);
 }
 
 function handleBackspace(linesEl, projectId) {
@@ -2350,7 +2478,8 @@ function handleBackspace(linesEl, projectId) {
   }
 
   if (cursorOffset === 0 && !lineText) {
-    // 빈 줄에서 줄 시작: 이 줄 삭제하고 이전 줄 끝으로 커서 이동
+    // 빈 줄에서 줄 시작: 코드 슬롯이 있으면 행 보존
+    if (lineHasChords(currentLine, projectId)) return;
     const prevLine = currentLine.previousElementSibling;
     currentLine.remove();
     if (prevLine) {
@@ -2359,7 +2488,6 @@ function handleBackspace(linesEl, projectId) {
       if (textNode && textNode.textContent.length > 0) {
         newRange.setStart(textNode, textNode.textContent.length);
       } else {
-        // 빈 이전 줄: <br> 앞에 커서
         const br = prevLine.querySelector('br');
         if (br) newRange.setStartBefore(br);
         else newRange.selectNodeContents(prevLine);
@@ -2368,23 +2496,55 @@ function handleBackspace(linesEl, projectId) {
       newRange.collapse(true);
       sel.removeAllRanges();
       sel.addRange(newRange);
+      // 커서 위치로 스크롤 자동 추적
+      requestAnimationFrame(() => prevLine?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     }
     saveAllLines(projectId, linesEl);
 
   } else if (cursorOffset === 0 && lineText) {
-    // 텍스트 있는 줄의 맨 앞: 이전 줄에 텍스트 병합하고 현재 줄 삭제
+    // 텍스트 있는 줄의 맨 앞: 이전 줄에 텍스트 병합
     const prevLine = currentLine.previousElementSibling;
     if (!prevLine) return; // 첫 줄이면 아무것도 안 함
     const prevText = getLineText(prevLine);
     setLineText(prevLine, prevText + lineText);
-    // 이전 줄 끝(병합 경계)에 커서
+    // 이전 줄 텍스트 끝(병합 경계)으로 커서 이동
     const textNode = Array.from(prevLine.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
     const newRange = document.createRange();
-    newRange.setStart(textNode, prevText.length);
+    if (textNode) {
+      newRange.setStart(textNode, prevText.length);
+    } else {
+      newRange.selectNodeContents(prevLine); newRange.collapse(false);
+    }
     newRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(newRange);
-    currentLine.remove();
+    // 커서 위치로 스크롤 자동 추적
+    requestAnimationFrame(() => prevLine?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    if (lineHasChords(currentLine, projectId)) {
+      // Q1-B: 코드 슬롯 있으면 행 보존 — 텍스트만 비움, 아래 텍스트 한 칸씩 위로
+      setLineText(currentLine, '');
+      // 아래 모든 행의 텍스트를 한 칸씩 위로 당기기
+      let upper = currentLine;
+      let lower = currentLine.nextElementSibling;
+      while (lower) {
+        const lowerText = getLineText(lower);
+        setLineText(upper, lowerText);
+        const nextLower = lower.nextElementSibling;
+        if (!lowerText && !lineHasChords(lower, projectId)) {
+          // 텍스트도 없고 코드 슬롯도 없는 마지막 행 → 제거
+          lower.remove();
+          break;
+        } else if (!nextLower) {
+          // 마지막 행이지만 코드 슬롯이 있으면 텍스트만 비움
+          setLineText(lower, '');
+        }
+        upper = lower;
+        lower = nextLower;
+      }
+    } else {
+      // 코드 슬롯 없으면 행 삭제
+      currentLine.remove();
+    }
     saveAllLines(projectId, linesEl);
 
   } else {
@@ -2398,6 +2558,127 @@ function handleBackspace(linesEl, projectId) {
     newRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(newRange);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 행 메뉴 (3-dot) — 코드 슬롯 행 독립 관리
+// ═══════════════════════════════════════════════════════════════
+let _rowMenuEl      = null;
+let _backdropEl     = null;
+let _rowMenuLineId  = null;
+let _rowMenuProjId  = null;
+let _rowMenuLinesEl = null;
+
+function _ensureRowMenuEl() {
+  if (_rowMenuEl) return;
+  // 백드롭: 투명 전체화면 → 터치/클릭 시 메뉴 닫기
+  _backdropEl = document.createElement('div');
+  _backdropEl.className = 'row-menu-backdrop hidden';
+  _backdropEl.addEventListener('click', _closeRowMenu);
+  _backdropEl.addEventListener('touchstart', e => {
+    e.preventDefault();
+    _closeRowMenu();
+  }, { passive: false });
+  document.body.appendChild(_backdropEl);
+  // 드롭다운
+  const d = document.createElement('div');
+  d.className = 'row-menu-dropdown hidden';
+  d.innerHTML = `
+    <button data-action="above">위에 줄 추가</button>
+    <button data-action="below">아래에 줄 추가</button>
+    <button data-action="clear">코드 슬롯 초기화</button>
+    <hr />
+    <button data-action="delete" class="danger">이 줄 삭제</button>`;
+  d.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (btn) _rowMenuAction(btn.dataset.action);
+  });
+  document.body.appendChild(d);
+  _rowMenuEl = d;
+}
+
+function openRowMenu(e, lineId, projectId) {
+  _ensureRowMenuEl();
+  _rowMenuLineId  = lineId;
+  _rowMenuProjId  = projectId;
+  const lineDiv   = e.currentTarget.closest('.project-line');
+  _rowMenuLinesEl = lineDiv?.parentElement ?? null;
+
+  // position: fixed → 뷰포트 기준 좌표 (내부 스크롤 무관)
+  const rect   = e.currentTarget.getBoundingClientRect();
+  const MENU_H = 176; // 드롭다운 예상 높이
+  const viewH  = window.innerHeight;
+  if (rect.bottom + MENU_H > viewH) {
+    // 아래 공간 부족 → 버튼 위쪽으로 뒤집어 표시
+    _rowMenuEl.style.top    = 'auto';
+    _rowMenuEl.style.bottom = (viewH - rect.top + 4) + 'px';
+  } else {
+    _rowMenuEl.style.top    = (rect.bottom + 4) + 'px';
+    _rowMenuEl.style.bottom = 'auto';
+  }
+  _rowMenuEl.style.right = (window.innerWidth - rect.right) + 'px';
+  _rowMenuEl.style.left  = 'auto';
+
+  _backdropEl.classList.remove('hidden');
+  _rowMenuEl.classList.remove('hidden');
+
+  // 내부 스크롤 발생 시 자동 닫기
+  _rowMenuLinesEl?.addEventListener('scroll', _closeRowMenu, { once: true });
+
+  // 마지막 줄이면 "이 줄 삭제" 비활성화
+  const lines = _rowMenuLinesEl?.querySelectorAll('.project-line');
+  _rowMenuEl.querySelector('[data-action="delete"]').disabled = (lines?.length ?? 0) <= 1;
+}
+
+function _closeRowMenu() {
+  _rowMenuEl?.classList.add('hidden');
+  _backdropEl?.classList.add('hidden');
+  // 메뉴 닫힐 때 contentEditable 복원 (터치로 열었을 때 비활성화됐던 것)
+  if (_rowMenuLinesEl) _rowMenuLinesEl.contentEditable = 'true';
+}
+
+function _rowMenuAction(action) {
+  _closeRowMenu();
+  const linesEl   = _rowMenuLinesEl;
+  const projectId = _rowMenuProjId;
+  const lineId    = _rowMenuLineId;
+  if (!linesEl || !projectId || !lineId) return;
+
+  const lineDiv = linesEl.querySelector(`.project-line[data-line-id="${lineId}"]`);
+  const p       = getProject(projectId);
+  if (!lineDiv || !p) return;
+
+  if (action === 'above' || action === 'below') {
+    const newId  = genId();
+    const newObj = { id: newId, text: '', slots: new Array(8).fill(null) };
+    const newDiv = document.createElement('div');
+    newDiv.className      = 'project-line';
+    newDiv.dataset.lineId = newId;
+    newDiv.appendChild(buildChordArea(newObj, p, true));
+    newDiv.appendChild(document.createElement('br'));
+    lineDiv.insertAdjacentElement(action === 'above' ? 'beforebegin' : 'afterend', newDiv);
+    saveAllLines(projectId, linesEl);
+    lucide.createIcons();
+
+  } else if (action === 'clear') {
+    const line = p.arrangement.find(l => l.id === lineId);
+    if (!line) return;
+    line.slots    = new Array(8).fill(null);
+    p.updatedAt   = Date.now();
+    updateProject(p);
+    // 코드 영역(wrapper) 재빌드
+    const oldWrapper = lineDiv.querySelector('.chord-row-wrapper') ?? lineDiv.querySelector('.chord-area');
+    if (oldWrapper) {
+      const newWrapper = buildChordArea({ id: lineId, text: line.text, slots: line.slots }, p, true);
+      oldWrapper.replaceWith(newWrapper);
+      lucide.createIcons();
+    }
+
+  } else if (action === 'delete') {
+    if (linesEl.querySelectorAll('.project-line').length <= 1) return;
+    lineDiv.remove();
+    saveAllLines(projectId, linesEl);
   }
 }
 
@@ -2600,9 +2881,19 @@ function placeChordInSlot(projectId, rowId, slotIdx, chordId) {
 function reRenderChordArea(lineId, line, project) {
   const lineDiv = document.querySelector(`.project-line[data-line-id="${lineId}"]`);
   if (!lineDiv) return;
+
+  // 편집 모드: chord-row-wrapper(래퍼+3-dot)가 있으면 래퍼째 교체
+  const oldWrapper = lineDiv.querySelector('.chord-row-wrapper');
+  if (oldWrapper) {
+    oldWrapper.replaceWith(buildChordArea(line, project, true));
+    lucide.createIcons(); // 새 3-dot 아이콘 렌더링
+    return;
+  }
+
+  // 뷰 모드: chord-area만 교체
   const oldArea = lineDiv.querySelector('.chord-area');
   if (!oldArea) return;
-  oldArea.replaceWith(buildChordArea(line, project));
+  oldArea.replaceWith(buildChordArea(line, project, false));
 }
 
 function swapChordSlots(projectId, srcLineId, srcIdx, tgtLineId, tgtIdx) {
@@ -3259,12 +3550,19 @@ function meCanvasClick(e) {
 
   const idx = me_dots.findIndex(d => d.s === si && d.f === fi);
   if (idx !== -1) {
+    // 같은 위치 토글 오프: 해당 dot만 제거
     me_dots.splice(idx, 1);
-    me_openMute[si] = 'open';
+    if (!me_dots.some(d => d.s === si)) me_openMute[si] = 'open';
   } else {
-    me_dots = me_dots.filter(d => d.s !== si);
-    me_openMute[si] = 'open';
-    me_dots.push({ s: si, f: fi, n: me_selectedFinger });
+    const meBarreF = meBarreMapCheck[si];
+    if (meBarreF !== undefined && fi > meBarreF) {
+      me_dots = me_dots.filter(d => d.s !== si || d.f === meBarreF);
+      me_dots.push({ s: si, f: fi, n: me_selectedFinger });
+    } else {
+      me_dots = me_dots.filter(d => d.s !== si);
+      me_openMute[si] = 'open';
+      me_dots.push({ s: si, f: fi, n: me_selectedFinger });
+    }
   }
   if (me_rootMode) me_rootIndex = meCalcRootIndex();
   meDraw();
@@ -3542,6 +3840,11 @@ window._handleShareImport = async function(rawCode) {
   renderSidebar();
   populateProjectSelect();
   lucide.createIcons();
+
+  // 새 프로젝트 모달 Enter 키 지원
+  document.getElementById('create-project-name-input')
+    .addEventListener('keydown', e => { if (e.key === 'Enter') confirmCreateProject(); });
+
   const shareParam = new URLSearchParams(location.search).get('share');
   if (shareParam) {
     history.replaceState(null, '', location.pathname);

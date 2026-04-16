@@ -133,3 +133,8 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 
 # 특정 기타 코드를 말할 때는 6번줄부터 순서대로 나열
 - ex. x02220 -> 6번줄 뮤트, 5번줄 개방현, 4번줄 2프랫, 3번줄 2프랫, 2번줄 2프랫, 1번줄 개방현
+
+# 모바일 터치 관련된 문제 해결방법
+- touchstart.preventDefault()는 이후 합성 click 이벤트를 억제한다. 터치(touchstart→touchend)와 마우스(mousedown→click)를 반드시 분리 처리할 것.
+
+- 버튼에 touchstart.preventDefault()를 걸어도 Android WebView는 상위 contenteditable 요소에 포커스를 주어 키보드가 뜬다. touchstart 시점에 즉시 linesEl.contentEditable = 'false'로 비활성화하고, 메뉴가 닫힐 때 'true'로   복원하는 것이 유일하게 확실한 해결법이다.

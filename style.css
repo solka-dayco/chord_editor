@@ -1039,6 +1039,7 @@ canvas {
   scrollbar-width: none;
   outline: none;
   font-family: 'Pretendard', sans-serif;
+  padding-bottom: 160px; /* 마지막 행 3-dot 드롭다운 잘림 방지 */
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-primary);
@@ -1383,3 +1384,57 @@ canvas {
 }
 .import-settings-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; }
 .import-settings-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+/* ── 행 메뉴 (3-dot) ── */
+.chord-row-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.chord-row-wrapper .chord-area { flex: 1; min-width: 0; }
+.row-menu-btn {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  margin-left: 4px; margin-top: 2px;
+  background: transparent;
+  border: none; border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.project-line:hover .row-menu-btn,
+.row-menu-btn:focus { opacity: 1; }
+@media (pointer: coarse) { .row-menu-btn { opacity: 1; } }
+
+.row-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: transparent;
+}
+.row-menu-backdrop.hidden { display: none; }
+
+.row-menu-dropdown {
+  position: fixed;
+  z-index: 2000;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,.14);
+  padding: 4px;
+  min-width: 160px;
+}
+.row-menu-dropdown.hidden { display: none; }
+.row-menu-dropdown button {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none;
+  padding: 8px 12px;
+  font-size: 14px; cursor: pointer;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--text-primary);
+}
+.row-menu-dropdown button:hover { background: var(--hover, rgba(0,0,0,.06)); }
+.row-menu-dropdown button.danger { color: var(--accent); }
+.row-menu-dropdown button:disabled { opacity: .4; cursor: default; }
+.row-menu-dropdown hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
