@@ -1645,3 +1645,54 @@ canvas {
   width: 100%;
   justify-content: center;
 }
+
+/* ── 온보딩 오버레이 ──────────────────────────────── */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.onboarding-overlay.hidden { display: none; }
+
+.onboarding-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px 32px;
+  text-align: center;
+}
+
+.onboarding-logo {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  color: var(--text-primary);
+}
+
+.onboarding-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.onboarding-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 99px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  transition: background .15s;
+}
+.onboarding-btn:hover { background: var(--surface); }

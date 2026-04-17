@@ -1330,7 +1330,7 @@ async function signInWithGoogle() {
 async function tryAutoSignIn() {
   if (!window.Capacitor?.isNativePlatform()) return;
 
-  // 먼저 저장된 세션이 있으면 복원
+  // 1) 저장된 세션이 유효하면 즉시 복원
   try {
     const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
     if (stored) {
@@ -1345,7 +1345,53 @@ async function tryAutoSignIn() {
     }
   } catch(e) { /* 무시 */ }
 
-  // 저장된 세션 없거나 만료 → Google 자동 로그인 시도
+  // 2) Google 무음 로그인 시도 (이전에 한 번이라도 로그인한 경우)
+  try {
+    const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
+    if (!GoogleAuth) { showOnboarding(); return; }
+
+    await GoogleAuth.initialize({
+      clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
+      scopes: ['profile', 'email'],
+      grantOfflineAccess: true,
+    });
+
+    const googleUser = await GoogleAuth.refresh();
+    const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
+    if (!idToken) { showOnboarding(); return; }
+
+    const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ provider: 'google', id_token: idToken }),
+    });
+    if (!rawResp.ok) { showOnboarding(); return; }
+    const rawJson = await rawResp.json();
+
+    const session = saveSessionToStorage(rawJson);
+    if (session.user) {
+      if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+      await fetchPlanWithToken(session.access_token);
+      renderAuthUI(session.user);
+    }
+  } catch(e) {
+    // 무음 로그인 불가 → 온보딩 화면 표시
+    console.log('[Auth] 자동 로그인 불가, 온보딩 표시:', e?.message || e);
+    showOnboarding();
+  }
+}
+
+function showOnboarding() {
+  const el = document.getElementById('onboarding-overlay');
+  if (el) el.classList.remove('hidden');
+}
+
+function hideOnboarding() {
+  const el = document.getElementById('onboarding-overlay');
+  if (el) el.classList.add('hidden');
+}
+
+async function onboardingSignIn() {
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
     if (!GoogleAuth) return;
@@ -1356,26 +1402,28 @@ async function tryAutoSignIn() {
       grantOfflineAccess: true,
     });
 
-    const googleUser = await GoogleAuth.refresh();
+    const googleUser = await GoogleAuth.signIn();
     const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
-    if (!idToken) return;
+    if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
 
     const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ provider: 'google', id_token: idToken }),
     });
-    if (!rawResp.ok) return;
     const rawJson = await rawResp.json();
+    if (!rawResp.ok) throw new Error(rawJson?.error_description || 'Supabase 인증 실패');
 
     const session = saveSessionToStorage(rawJson);
     if (session.user) {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchPlanWithToken(session.access_token);
       renderAuthUI(session.user);
+      hideOnboarding();
     }
   } catch(e) {
-    console.log('[Auth] 자동 로그인 불가:', e?.message || e);
+    const msg = e?.message || '';
+    if (!msg.includes('cancel')) alert('로그인 실패: ' + msg);
   }
 }
 
