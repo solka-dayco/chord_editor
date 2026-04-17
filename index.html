@@ -39,21 +39,11 @@
           <div id="sidebar-recent" class="sidebar-list"></div>
         </div>
       </nav>
-      <!-- 웹 전용 로그인 UI -->
-      <div class="sidebar-auth-footer" id="sidebar-auth-footer">
-        <div id="auth-logged-out">
-          <button class="btn btn-ghost btn-sm auth-btn" onclick="signInWithGoogle()">
-            <i data-lucide="log-in"></i> Google 로그인
-          </button>
-          <button id="auth-apple-btn" class="btn btn-ghost btn-sm auth-btn" onclick="signInWithApple()">
-            <i data-lucide="log-in"></i> Apple 로그인
-          </button>
-        </div>
+      <!-- 로그인 UI 숨김: 자동 로그인으로만 처리 -->
+      <div class="sidebar-auth-footer" id="sidebar-auth-footer" style="display:none">
+        <div id="auth-logged-out"></div>
         <div id="auth-logged-in" style="display:none">
           <span id="auth-user-email" class="auth-user-email"></span>
-          <button class="btn btn-ghost btn-sm auth-btn" onclick="signOutWeb()">
-            <i data-lucide="log-out"></i> 로그아웃
-          </button>
         </div>
       </div>
       <div class="sidebar-plan-footer">

@@ -1435,28 +1435,9 @@ async function fetchWebPlan() {
 }
 
 function renderAuthUI(user) {
-  const footer = document.getElementById('sidebar-auth-footer');
-  if (!footer) return;
-
-  footer.style.display = ''; // Android + 웹 모두 표시
-
-  // Apple 로그인은 Android에서 숨김
-  const appleBtn = document.getElementById('auth-apple-btn');
-  if (appleBtn) appleBtn.style.display = window.Capacitor?.isNativePlatform() ? 'none' : '';
-
-  const loggedOut = document.getElementById('auth-logged-out');
-  const loggedIn  = document.getElementById('auth-logged-in');
-  const emailEl   = document.getElementById('auth-user-email');
-
-  if (user) {
-    loggedOut.style.display = 'none';
-    loggedIn.style.display  = '';
-    if (emailEl) emailEl.textContent = user.email || '';
-  } else {
-    loggedOut.style.display = '';
-    loggedIn.style.display  = 'none';
-  }
-  lucide.createIcons();
+  // 로그인 UI는 노출하지 않음 — 자동 로그인으로만 처리
+  // 플랜 배지만 갱신
+  renderPlanBadge();
 }
 
 // ── Android 인앱 결제 (RevenueCat) ────────────────────────────
