@@ -1240,11 +1240,46 @@ async function initSupabase() {
   }
 }
 
+// supabase-js가 Capacitor WebView에서 hang되므로 세션을 직접 관리
+const SUPABASE_STORAGE_KEY = 'sb-jbvkygeksohlysyvaoab-auth-token';
+
+function saveSessionToStorage(rawJson) {
+  const session = {
+    access_token:  rawJson.access_token,
+    refresh_token: rawJson.refresh_token,
+    token_type:    rawJson.token_type || 'bearer',
+    expires_in:    rawJson.expires_in || 3600,
+    expires_at:    rawJson.expires_at || Math.floor(Date.now() / 1000) + (rawJson.expires_in || 3600),
+    user:          rawJson.user,
+  };
+  localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify(session));
+  return session;
+}
+
+async function fetchPlanWithToken(accessToken) {
+  try {
+    const resp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/rest/v1/rpc/get_my_plan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + accessToken,
+      },
+      body: '{}',
+    });
+    if (resp.ok) {
+      const plan = await resp.json();
+      if (plan) setPlan(plan);
+    }
+  } catch(e) {
+    console.warn('[Auth] fetchPlanWithToken 실패:', e);
+  }
+}
+
 async function signInWithGoogle() {
   if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
 
   if (window.Capacitor?.isNativePlatform()) {
-    // Android: Capacitor 플러그인 브리지로 접근 (번들러 없는 환경)
     try {
       const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
       if (!GoogleAuth) throw new Error('GoogleAuth 플러그인을 찾을 수 없습니다.');
@@ -1259,7 +1294,7 @@ async function signInWithGoogle() {
       const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
       if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
 
-      // supabase-js signInWithIdToken이 WebView에서 hang되는 버그 → 직접 fetch로 우회
+      // supabase-js가 WebView에서 hang → 직접 fetch + localStorage 수동 세팅
       const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
@@ -1268,18 +1303,13 @@ async function signInWithGoogle() {
       const rawJson = await rawResp.json();
       if (!rawResp.ok) throw new Error(rawJson?.error_description || rawJson?.msg || 'Supabase 인증 실패');
 
-      const { data, error } = await _supabase.auth.setSession({
-        access_token: rawJson.access_token,
-        refresh_token: rawJson.refresh_token,
-      });
-      if (error) throw new Error('세션 설정 실패: ' + error.message);
+      const session = saveSessionToStorage(rawJson);
+      const user = session.user;
 
-      alert('[디버그] Supabase 결과\nuser: ' + (data.session?.user?.email || '없음'));
-
-      if (data.session?.user) {
-        if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
-        await fetchWebPlan();
-        renderAuthUI(data.session.user);
+      if (user) {
+        if (window._RC) await window._RC.logIn({ appUserID: user.id }).catch(() => {});
+        await fetchPlanWithToken(session.access_token);
+        renderAuthUI(user);
       }
     } catch(e) {
       const msg = e?.message || JSON.stringify(e) || '알 수 없는 오류';
@@ -1289,7 +1319,6 @@ async function signInWithGoogle() {
       }
     }
   } else {
-    // 웹: 일반 OAuth 리다이렉트
     await _supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: location.origin + location.pathname }
@@ -1297,9 +1326,26 @@ async function signInWithGoogle() {
   }
 }
 
-// Android 앱 시작 시 자동 로그인 시도 (이전에 로그인한 경우)
+// Android 앱 시작 시 자동 로그인 시도
 async function tryAutoSignIn() {
-  if (!window.Capacitor?.isNativePlatform() || !_supabase) return;
+  if (!window.Capacitor?.isNativePlatform()) return;
+
+  // 먼저 저장된 세션이 있으면 복원
+  try {
+    const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+    if (stored) {
+      const session = JSON.parse(stored);
+      const now = Math.floor(Date.now() / 1000);
+      if (session.user && session.expires_at > now) {
+        if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+        await fetchPlanWithToken(session.access_token);
+        renderAuthUI(session.user);
+        return;
+      }
+    }
+  } catch(e) { /* 무시 */ }
+
+  // 저장된 세션 없거나 만료 → Google 자동 로그인 시도
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
     if (!GoogleAuth) return;
@@ -1314,7 +1360,6 @@ async function tryAutoSignIn() {
     const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
     if (!idToken) return;
 
-    // 직접 fetch로 토큰 교환 (supabase-js hang 버그 우회)
     const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
@@ -1323,17 +1368,13 @@ async function tryAutoSignIn() {
     if (!rawResp.ok) return;
     const rawJson = await rawResp.json();
 
-    const { data } = await _supabase.auth.setSession({
-      access_token: rawJson.access_token,
-      refresh_token: rawJson.refresh_token,
-    });
-    if (data.session?.user) {
-      if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
-      await fetchWebPlan();
-      renderAuthUI(data.session.user);
+    const session = saveSessionToStorage(rawJson);
+    if (session.user) {
+      if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+      await fetchPlanWithToken(session.access_token);
+      renderAuthUI(session.user);
     }
   } catch(e) {
-    // 자동 로그인 실패는 조용히 무시 (처음 실행이거나 로그인 안 된 경우)
     console.log('[Auth] 자동 로그인 불가:', e?.message || e);
   }
 }
@@ -1348,6 +1389,24 @@ async function signInWithApple() {
 }
 
 async function signOutWeb() {
+  // Android: localStorage 세션 직접 삭제
+  if (window.Capacitor?.isNativePlatform()) {
+    try {
+      const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+      if (stored) {
+        const session = JSON.parse(stored);
+        // Supabase 서버에 로그아웃 요청
+        fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON, 'Authorization': 'Bearer ' + session.access_token },
+        }).catch(() => {});
+      }
+    } catch(e) {}
+    localStorage.removeItem(SUPABASE_STORAGE_KEY);
+    setPlan('free');
+    renderAuthUI(null);
+    return;
+  }
   if (!_supabase) return;
   await _supabase.auth.signOut();
   setPlan('free');
@@ -1355,6 +1414,17 @@ async function signOutWeb() {
 }
 
 async function fetchWebPlan() {
+  // Android: localStorage 세션에서 토큰 꺼내 직접 fetch
+  if (window.Capacitor?.isNativePlatform()) {
+    try {
+      const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+      if (!stored) return;
+      const session = JSON.parse(stored);
+      if (session.access_token) await fetchPlanWithToken(session.access_token);
+    } catch(e) { console.warn('[Auth] fetchWebPlan(Android) 실패:', e); }
+    return;
+  }
+  // 웹: supabase-js rpc 사용
   if (!_supabase) return;
   try {
     const { data, error } = await _supabase.rpc('get_my_plan');
