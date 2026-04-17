@@ -24,7 +24,8 @@
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/share": "^8.0.1"
+    "@capacitor/share": "^8.0.1",
+    "@revenuecat/purchases-capacitor": "^13.0.0"
   },
   "devDependencies": {
     "chokidar": "^5.0.0"

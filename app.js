@@ -842,6 +842,11 @@ async function savePNG() {
   const select = document.getElementById('export-scale');
   const scale  = parseFloat(select.value);
 
+  if (!canUseScale(scale)) {
+    showUpgradeModal('scale_limit');
+    return;
+  }
+
   const exp = document.createElement('canvas');
   exp.width  = Math.round(BASE_W * scale);
   exp.height = Math.round(BASE_H * scale);
@@ -1135,6 +1140,298 @@ function getPlan() {
   return localStorage.getItem('chorditor_plan') || 'free';
 }
 
+// ── 유료 플랜 제한 설정 ──────────────────────────────────────────
+const PLAN_LIMITS = {
+  free:     { maxProjects: 2,        maxScale: 1 },
+  standard: { maxProjects: 10,       maxScale: 1 },
+  pro:      { maxProjects: Infinity, maxScale: 3 },
+};
+
+function getPlanLimit(key) {
+  return (PLAN_LIMITS[getPlan()] || PLAN_LIMITS.free)[key];
+}
+function canCreateProject() {
+  return loadProjects().length < getPlanLimit('maxProjects');
+}
+function canUseScale(scale) {
+  return scale <= getPlanLimit('maxScale');
+}
+
+function setPlan(plan) {
+  localStorage.setItem('chorditor_plan', plan);
+  updateExportScaleOptions();
+  renderPlanBadge();
+}
+
+// ── Supabase Auth (웹 전용) ────────────────────────────────────
+// Supabase 프로젝트 생성 후 아래 두 값을 교체하세요
+// Settings → API → Project URL / anon public
+const SUPABASE_URL  = 'https://jbvkygeksohlysyvaoab.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impidmt5Z2Vrc29obHlzeXZhb2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTk5NjgsImV4cCI6MjA5MTk3NTk2OH0.6RSgChy0Yq0H2TJpZPSoMKQ2V-OYfR0XzE1aJBBZkXI';
+
+let _supabase = null;
+
+async function initSupabase() {
+  if (window.Capacitor?.isNativePlatform()) return; // Android는 RevenueCat 사용
+  if (!window.supabase) { console.warn('[Supabase] 라이브러리 로드 안됨'); return; }
+
+
+  _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // 인증 상태 변화 감지 (로그인/로그아웃/토큰 갱신)
+  _supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      await fetchWebPlan();
+      renderAuthUI(session.user);
+    } else {
+      setPlan('free');
+      renderAuthUI(null);
+    }
+  });
+
+  // OAuth 리다이렉트 후 세션 복원
+  const { data: { session } } = await _supabase.auth.getSession();
+  if (session?.user) {
+    await fetchWebPlan();
+    renderAuthUI(session.user);
+  } else {
+    renderAuthUI(null);
+  }
+}
+
+async function signInWithGoogle() {
+  if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
+  await _supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.origin + location.pathname }
+  });
+}
+
+async function signInWithApple() {
+  if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
+  await _supabase.auth.signInWithOAuth({
+    provider: 'apple',
+    options: { redirectTo: location.origin + location.pathname }
+  });
+}
+
+async function signOutWeb() {
+  if (!_supabase) return;
+  await _supabase.auth.signOut();
+  setPlan('free');
+  renderAuthUI(null);
+}
+
+async function fetchWebPlan() {
+  if (!_supabase) return;
+  try {
+    const { data, error } = await _supabase.rpc('get_my_plan');
+    if (!error && data) setPlan(data);
+  } catch(e) {
+    console.warn('[Supabase] fetchWebPlan 실패:', e);
+  }
+}
+
+function renderAuthUI(user) {
+  const footer = document.getElementById('sidebar-auth-footer');
+  if (!footer) return;
+
+  // Android 네이티브에서는 로그인 UI 숨김
+  if (window.Capacitor?.isNativePlatform()) {
+    footer.style.display = 'none';
+    return;
+  }
+
+  const loggedOut = document.getElementById('auth-logged-out');
+  const loggedIn  = document.getElementById('auth-logged-in');
+  const emailEl   = document.getElementById('auth-user-email');
+
+  if (user) {
+    loggedOut.style.display = 'none';
+    loggedIn.style.display  = '';
+    if (emailEl) emailEl.textContent = user.email || '';
+  } else {
+    loggedOut.style.display = '';
+    loggedIn.style.display  = 'none';
+  }
+  lucide.createIcons();
+}
+
+// ── Android 인앱 결제 (RevenueCat) ────────────────────────────
+// RevenueCat 대시보드에서 발급한 Android 앱 키로 교체하세요.
+const REVENUECAT_ANDROID_KEY = 'test_bPkuFIqjqlvFoEWDLktVfBcjlfO';
+
+// Entitlement ID (RevenueCat 대시보드에서 설정한 값과 동일해야 함)
+const ENTITLEMENT_STANDARD = 'standard_entitlement';
+const ENTITLEMENT_PRO      = 'pro_entitlement';
+
+// Google Play 구독 상품 식별자 (RevenueCat Offering 내 Package identifier)
+const PRODUCT_STANDARD = 'standard_monthly';
+const PRODUCT_PRO      = 'pro_monthly';
+
+async function initBilling() {
+  if (!window.Capacitor?.isNativePlatform()) return;
+  try {
+    const { Purchases } = await import('@revenuecat/purchases-capacitor');
+    window._RC = Purchases;
+    await Purchases.configure({ apiKey: REVENUECAT_ANDROID_KEY });
+    await syncPlanFromBilling();
+  } catch(e) {
+    console.warn('[Billing] initBilling 실패:', e);
+  }
+}
+
+async function syncPlanFromBilling() {
+  if (!window._RC) return;
+  try {
+    const { customerInfo } = await window._RC.getCustomerInfo();
+    const active = customerInfo.entitlements.active;
+    if (active[ENTITLEMENT_PRO])      setPlan('pro');
+    else if (active[ENTITLEMENT_STANDARD]) setPlan('standard');
+    else                               setPlan('free');
+  } catch(e) {
+    console.warn('[Billing] syncPlanFromBilling 실패:', e);
+  }
+}
+
+async function purchasePlan(planId) {
+  if (!window._RC) {
+    alert('인앱 결제를 사용할 수 없는 환경입니다.');
+    return;
+  }
+  const productId = planId === 'pro' ? PRODUCT_PRO : PRODUCT_STANDARD;
+  try {
+    const { offerings } = await window._RC.getOfferings();
+    const current = offerings.current;
+    if (!current) throw new Error('Offering 없음');
+
+    const pkg = current.availablePackages.find(p =>
+      p.identifier === productId || p.product?.identifier?.includes(productId)
+    );
+    if (!pkg) throw new Error('상품을 찾을 수 없습니다: ' + productId);
+
+    await window._RC.purchasePackage({ aPackage: pkg });
+    await syncPlanFromBilling();
+    closePlanModal();
+    alert('구독이 완료되었습니다!');
+  } catch(e) {
+    if (e?.code !== 'PURCHASE_CANCELLED') {
+      console.error('[Billing] purchasePlan 실패:', e);
+      alert('구독 중 오류가 발생했습니다: ' + (e?.message || JSON.stringify(e)));
+    }
+  }
+}
+
+async function restorePurchases() {
+  if (!window._RC) {
+    alert('인앱 결제를 사용할 수 없는 환경입니다.');
+    return;
+  }
+  try {
+    await window._RC.restorePurchases();
+    await syncPlanFromBilling();
+    alert('구매 내역을 복원했습니다.');
+  } catch(e) {
+    console.error('[Billing] restorePurchases 실패:', e);
+    alert('복원 실패: ' + (e?.message || JSON.stringify(e)));
+  }
+}
+
+// ── 배율 옵션 잠금 제어 ─────────────────────────────────────────
+function updateExportScaleOptions() {
+  const max = getPlanLimit('maxScale');
+  const select = document.getElementById('export-scale');
+  if (!select) return;
+  select.querySelectorAll('option').forEach(opt => {
+    const v = parseFloat(opt.value);
+    const locked = v > max;
+    opt.textContent = opt.textContent.replace(' 🔒', '');
+    opt.style.color = locked ? '#aaa' : '';
+    // 현재 선택된 값이 잠기면 x1로 리셋
+    if (locked && select.value === opt.value) select.value = '1';
+  });
+}
+
+// ── 요금제 안내 모달 ───────────────────────────────────────────
+function openPlanModal() {
+  const plan = getPlan();
+  const isNative = window.Capacitor?.isNativePlatform();
+
+  ['standard', 'pro'].forEach(p => {
+    const btn = document.getElementById('plan-btn-' + p);
+    if (!btn) return;
+    if (p === plan) {
+      btn.textContent = '현재 플랜';
+      btn.disabled = true;
+      btn.onclick = null;
+    } else {
+      btn.disabled = false;
+      if (isNative) {
+        btn.textContent = '구독하기';
+        btn.onclick = () => purchasePlan(p);
+      } else {
+        // 웹 환경: Play Store 안내
+        btn.textContent = '앱에서 구독';
+        btn.onclick = () => alert('구독은 Android 앱에서 가능합니다.\nGoogle Play에서 Chorditor를 다운로드하세요.');
+      }
+    }
+  });
+
+  // 구매 복원 버튼: Android에서만 표시
+  const restoreBtn = document.getElementById('plan-restore-btn');
+  if (restoreBtn) restoreBtn.style.display = isNative ? '' : 'none';
+
+  document.getElementById('plan-modal-overlay').classList.remove('hidden');
+  lucide.createIcons();
+}
+
+function closePlanModal() {
+  document.getElementById('plan-modal-overlay').classList.add('hidden');
+}
+
+// ── 업그레이드 유도 모달 ───────────────────────────────────────
+const UPGRADE_MESSAGES = {
+  project_limit: {
+    title: '프로젝트 한도에 도달했습니다',
+    desc: {
+      free:     '무료 플랜은 프로젝트를 2개까지 만들 수 있습니다. Standard 또는 Pro로 업그레이드하세요.',
+      standard: 'Standard 플랜은 프로젝트를 10개까지 만들 수 있습니다. Pro로 업그레이드하면 무제한으로 사용할 수 있습니다.',
+      pro:      '',
+    },
+  },
+  scale_limit: {
+    title: '이 배율은 Pro 플랜 전용입니다',
+    desc: {
+      free:     'x2, x3 고화질 저장은 Pro 플랜에서 사용할 수 있습니다.',
+      standard: 'x2, x3 고화질 저장은 Pro 플랜에서 사용할 수 있습니다.',
+      pro:      '',
+    },
+  },
+};
+
+function showUpgradeModal(reason) {
+  const plan = getPlan();
+  const msg = UPGRADE_MESSAGES[reason];
+  if (!msg) return;
+  document.getElementById('upgrade-modal-title').textContent = msg.title;
+  document.getElementById('upgrade-modal-desc').textContent  = msg.desc[plan] || '';
+  document.getElementById('upgrade-modal-overlay').classList.remove('hidden');
+}
+
+function closeUpgradeModal() {
+  document.getElementById('upgrade-modal-overlay').classList.add('hidden');
+}
+
+// ── 사이드바 플랜 배지 ─────────────────────────────────────────
+function renderPlanBadge() {
+  const el = document.getElementById('sidebar-plan-badge');
+  if (!el) return;
+  const plan = getPlan();
+  const labels = { free: 'FREE', standard: 'STANDARD', pro: 'PRO' };
+  el.textContent = labels[plan] || 'FREE';
+  el.dataset.plan = plan;
+}
+
 function getProject(id) {
   return loadProjects().find(p => p.id === id) || null;
 }
@@ -1344,6 +1641,10 @@ function reorderPinned(dragId, targetId) {
 // 프로젝트 생성
 // ═══════════════════════════════════════════════════════════════
 function promptCreateProject() {
+  if (!canCreateProject()) {
+    showUpgradeModal('project_limit');
+    return;
+  }
   const input = document.getElementById('create-project-name-input');
   input.value = '';
   document.getElementById('modal-create-project').classList.remove('hidden');
@@ -3841,10 +4142,26 @@ window._handleShareImport = async function(rawCode) {
   renderSidebar();
   populateProjectSelect();
   lucide.createIcons();
+  updateExportScaleOptions();
+  renderPlanBadge();
+  initBilling();  // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
+  initSupabase(); // 웹 Supabase Auth 초기화 (비동기, 실패해도 앱 동작 유지)
 
   // 새 프로젝트 모달 Enter 키 지원
   document.getElementById('create-project-name-input')
     .addEventListener('keydown', e => { if (e.key === 'Enter') confirmCreateProject(); });
+
+  // export-scale 선택 시 플랜 체크 (disabled가 무시되는 환경 대비)
+  const exportScaleEl = document.getElementById('export-scale');
+  if (exportScaleEl) {
+    exportScaleEl.addEventListener('change', () => {
+      const scale = parseFloat(exportScaleEl.value);
+      if (!canUseScale(scale)) {
+        exportScaleEl.value = '1'; // 선택 되돌리기
+        showUpgradeModal('scale_limit');
+      }
+    });
+  }
 
   const shareParam = new URLSearchParams(location.search).get('share');
   if (shareParam) {
