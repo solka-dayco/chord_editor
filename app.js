@@ -1244,21 +1244,55 @@ async function signInWithGoogle() {
   if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
 
   if (window.Capacitor?.isNativePlatform()) {
-    // Android: 인앱 브라우저로 OAuth 열기 → 딥링크로 콜백
-    const { data, error } = await _supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { skipBrowserRedirect: true, redirectTo: 'com.chorditor.app://auth-callback' }
-    });
-    if (error || !data?.url) { alert('로그인 시작 실패: ' + (error?.message || '')); return; }
-    const CapBrowser = window.Capacitor?.Plugins?.Browser;
-    if (CapBrowser) await CapBrowser.open({ url: data.url, windowName: '_self' });
-    else window.open(data.url, '_blank');
+    // Android: 네이티브 Google 로그인 → ID 토큰 → Supabase
+    try {
+      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+      const googleUser = await GoogleAuth.signIn();
+      const idToken = googleUser?.authentication?.idToken;
+      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
+      const { data, error } = await _supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: idToken,
+      });
+      if (error) throw error;
+      if (data.session?.user) {
+        if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
+        await fetchWebPlan();
+        renderAuthUI(data.session.user);
+      }
+    } catch(e) {
+      if (e?.message !== 'The user canceled the sign-in flow.') {
+        console.error('[Auth] Google 로그인 실패:', e);
+        alert('로그인 실패: ' + (e?.message || ''));
+      }
+    }
   } else {
     // 웹: 일반 OAuth 리다이렉트
     await _supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: location.origin + location.pathname }
     });
+  }
+}
+
+// Android 앱 시작 시 자동 로그인 시도 (이전에 로그인한 경우)
+async function tryAutoSignIn() {
+  if (!window.Capacitor?.isNativePlatform() || !_supabase) return;
+  try {
+    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+    GoogleAuth.initialize();
+    const googleUser = await GoogleAuth.refresh();
+    const idToken = googleUser?.idToken;
+    if (!idToken) return;
+    const { data } = await _supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+    if (data.session?.user) {
+      if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
+      await fetchWebPlan();
+      renderAuthUI(data.session.user);
+    }
+  } catch(e) {
+    // 자동 로그인 실패는 조용히 무시 (처음 실행이거나 로그인 안 된 경우)
+    console.log('[Auth] 자동 로그인 불가 (수동 로그인 필요)');
   }
 }
 
@@ -4216,7 +4250,7 @@ window._handleShareImport = async function(rawCode) {
   updateExportScaleOptions();
   renderPlanBadge();
   initBilling();  // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
-  initSupabase(); // 웹 Supabase Auth 초기화 (비동기, 실패해도 앱 동작 유지)
+  initSupabase().then(() => tryAutoSignIn()); // Supabase 초기화 후 자동 로그인 시도
 
   // 새 프로젝트 모달 Enter 키 지원
   document.getElementById('create-project-name-input')

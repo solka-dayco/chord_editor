@@ -1,0 +1,43 @@
+{
+  "project_info": {
+    "project_number": "495859421223",
+    "project_id": "hale-skill-493603-v4",
+    "storage_bucket": ""
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495859421223:android:0000000000000000",
+        "android_client_info": {
+          "package_name": "com.chorditor.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "495859421223-u91efimr8keu7pf9den6dv4bq0aoibkm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chorditor.app",
+            "certificate_hash": "aa8018d35c997c3639361d629c9babac76e08128"
+          }
+        },
+        {
+          "client_id": "495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

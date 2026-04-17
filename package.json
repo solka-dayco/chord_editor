@@ -21,12 +21,13 @@
   "dependencies": {
     "@capacitor-community/media": "^9.1.0",
     "@capacitor/android": "^8.3.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/share": "^8.0.1",
-    "@capacitor/app": "^8.0.0",
-    "@capacitor/browser": "^8.0.0",
+    "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4",
     "@revenuecat/purchases-capacitor": "^13.0.0"
   },
   "devDependencies": {
