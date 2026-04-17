@@ -1503,7 +1503,9 @@ const PRODUCT_PRO      = 'pro_monthly';
 async function initBilling() {
   if (!window.Capacitor?.isNativePlatform()) return;
   try {
-    const { Purchases } = await import('@revenuecat/purchases-capacitor');
+    // 번들러 없는 환경 → Capacitor 플러그인 브리지로 접근
+    const Purchases = window.Capacitor?.Plugins?.Purchases;
+    if (!Purchases) { console.warn('[Billing] Purchases 플러그인 없음'); return; }
     window._RC = Purchases;
     await Purchases.configure({ apiKey: REVENUECAT_ANDROID_KEY });
     await syncPlanFromBilling();
@@ -1516,10 +1518,10 @@ async function syncPlanFromBilling() {
   if (!window._RC) return;
   try {
     const { customerInfo } = await window._RC.getCustomerInfo();
-    const active = customerInfo.entitlements.active;
-    if (active[ENTITLEMENT_PRO])      setPlan('pro');
+    const active = customerInfo?.entitlements?.active || {};
+    if (active[ENTITLEMENT_PRO])           setPlan('pro');
     else if (active[ENTITLEMENT_STANDARD]) setPlan('standard');
-    else                               setPlan('free');
+    else                                   setPlan('free');
   } catch(e) {
     console.warn('[Billing] syncPlanFromBilling 실패:', e);
   }
@@ -1531,23 +1533,19 @@ async function purchasePlan(planId) {
     return;
   }
 
-  // 구매 전 Google 로그인 필수 (RevenueCat ↔ Supabase 연결을 위해)
-  if (_supabase) {
-    const { data: { session } } = await _supabase.auth.getSession();
-    if (!session?.user) {
-      if (confirm('구독하려면 Google 로그인이 필요합니다.\n로그인하시겠어요?')) {
-        await signInWithGoogle();
-      }
-      return;
+  // RevenueCat App User ID = 저장된 Supabase user UUID
+  try {
+    const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+    if (stored) {
+      const session = JSON.parse(stored);
+      if (session.user?.id) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
     }
-    // RevenueCat App User ID = Supabase user UUID 로 설정
-    await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-  }
+  } catch(e) {}
 
   const productId = planId === 'pro' ? PRODUCT_PRO : PRODUCT_STANDARD;
   try {
     const { offerings } = await window._RC.getOfferings();
-    const current = offerings.current;
+    const current = offerings?.current;
     if (!current) throw new Error('Offering 없음');
 
     const pkg = current.availablePackages.find(p =>
@@ -1556,8 +1554,8 @@ async function purchasePlan(planId) {
     if (!pkg) throw new Error('상품을 찾을 수 없습니다: ' + productId);
 
     await window._RC.purchasePackage({ aPackage: pkg });
-    await syncPlanFromBilling(); // RevenueCat 로컬 상태 즉시 반영
-    await fetchWebPlan();        // DB에서도 플랜 확인 (webhook 처리 후)
+    await syncPlanFromBilling();
+    await fetchWebPlan();
     closePlanModal();
     alert('구독이 완료되었습니다!');
   } catch(e) {
