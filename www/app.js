@@ -1244,12 +1244,24 @@ async function signInWithGoogle() {
   if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
 
   if (window.Capacitor?.isNativePlatform()) {
-    // Android: 네이티브 Google 로그인 → ID 토큰 → Supabase
+    // Android: Capacitor 플러그인 브리지로 접근 (번들러 없는 환경)
     try {
-      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+      const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
+      if (!GoogleAuth) throw new Error('GoogleAuth 플러그인을 찾을 수 없습니다.');
+
+      await GoogleAuth.initialize({
+        clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
+        scopes: ['profile', 'email'],
+        grantOfflineAccess: true,
+      });
+
       const googleUser = await GoogleAuth.signIn();
-      const idToken = googleUser?.authentication?.idToken;
-      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
+      console.log('[Auth] GoogleAuth.signIn() 결과:', JSON.stringify(googleUser));
+
+      // idToken 위치: authentication.idToken 또는 idToken 직접
+      const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
+      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다. 응답: ' + JSON.stringify(googleUser));
+
       const { data, error } = await _supabase.auth.signInWithIdToken({
         provider: 'google',
         token: idToken,
@@ -1261,9 +1273,10 @@ async function signInWithGoogle() {
         renderAuthUI(data.session.user);
       }
     } catch(e) {
-      if (e?.message !== 'The user canceled the sign-in flow.') {
+      const msg = e?.message || JSON.stringify(e) || '알 수 없는 오류';
+      if (!msg.includes('canceled') && !msg.includes('cancel')) {
         console.error('[Auth] Google 로그인 실패:', e);
-        alert('로그인 실패: ' + (e?.message || ''));
+        alert('로그인 실패: ' + msg);
       }
     }
   } else {
@@ -1279,11 +1292,19 @@ async function signInWithGoogle() {
 async function tryAutoSignIn() {
   if (!window.Capacitor?.isNativePlatform() || !_supabase) return;
   try {
-    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-    GoogleAuth.initialize();
+    const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
+    if (!GoogleAuth) return;
+
+    await GoogleAuth.initialize({
+      clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
+      scopes: ['profile', 'email'],
+      grantOfflineAccess: true,
+    });
+
     const googleUser = await GoogleAuth.refresh();
-    const idToken = googleUser?.idToken;
+    const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
     if (!idToken) return;
+
     const { data } = await _supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
     if (data.session?.user) {
       if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
@@ -1292,7 +1313,7 @@ async function tryAutoSignIn() {
     }
   } catch(e) {
     // 자동 로그인 실패는 조용히 무시 (처음 실행이거나 로그인 안 된 경우)
-    console.log('[Auth] 자동 로그인 불가 (수동 로그인 필요)');
+    console.log('[Auth] 자동 로그인 불가:', e?.message || e);
   }
 }
 
