@@ -1172,8 +1172,11 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 let _supabase = null;
 
 async function initSupabase() {
-  if (window.Capacitor?.isNativePlatform()) return; // Android는 RevenueCat 사용
-  if (!window.supabase) { console.warn('[Supabase] 라이브러리 로드 안됨'); return; }
+  if (window.Capacitor?.isNativePlatform()) {
+    renderAuthUI(null); // Android에서는 로그인 UI 숨김
+    return;
+  }
+  if (!window.supabase) { console.warn('[Supabase] 라이브러리 로드 안됨'); renderAuthUI(null); return; }
 
 
   _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
