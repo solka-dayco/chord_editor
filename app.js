@@ -1256,17 +1256,26 @@ async function signInWithGoogle() {
       });
 
       const googleUser = await GoogleAuth.signIn();
-      console.log('[Auth] GoogleAuth.signIn() 결과:', JSON.stringify(googleUser));
-
-      // idToken 위치: authentication.idToken 또는 idToken 직접
       const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
-      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다. 응답: ' + JSON.stringify(googleUser));
+      if (!idToken) throw new Error('ID 토큰을 받지 못했습니다.');
 
-      const { data, error } = await _supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: idToken,
+      // supabase-js signInWithIdToken이 WebView에서 hang되는 버그 → 직접 fetch로 우회
+      const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+        body: JSON.stringify({ provider: 'google', id_token: idToken }),
       });
-      if (error) throw error;
+      const rawJson = await rawResp.json();
+      if (!rawResp.ok) throw new Error(rawJson?.error_description || rawJson?.msg || 'Supabase 인증 실패');
+
+      const { data, error } = await _supabase.auth.setSession({
+        access_token: rawJson.access_token,
+        refresh_token: rawJson.refresh_token,
+      });
+      if (error) throw new Error('세션 설정 실패: ' + error.message);
+
+      alert('[디버그] Supabase 결과\nuser: ' + (data.session?.user?.email || '없음'));
+
       if (data.session?.user) {
         if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
         await fetchWebPlan();
@@ -1305,7 +1314,19 @@ async function tryAutoSignIn() {
     const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
     if (!idToken) return;
 
-    const { data } = await _supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+    // 직접 fetch로 토큰 교환 (supabase-js hang 버그 우회)
+    const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+      body: JSON.stringify({ provider: 'google', id_token: idToken }),
+    });
+    if (!rawResp.ok) return;
+    const rawJson = await rawResp.json();
+
+    const { data } = await _supabase.auth.setSession({
+      access_token: rawJson.access_token,
+      refresh_token: rawJson.refresh_token,
+    });
     if (data.session?.user) {
       if (window._RC) await window._RC.logIn({ appUserID: data.session.user.id }).catch(() => {});
       await fetchWebPlan();
