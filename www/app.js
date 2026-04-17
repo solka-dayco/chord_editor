@@ -1172,18 +1172,55 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 let _supabase = null;
 
 async function initSupabase() {
-  if (window.Capacitor?.isNativePlatform()) {
-    renderAuthUI(null); // Android에서는 로그인 UI 숨김
-    return;
-  }
   if (!window.supabase) { console.warn('[Supabase] 라이브러리 로드 안됨'); renderAuthUI(null); return; }
 
-
+  // Android/웹 공통으로 Supabase 초기화
   _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-  // 인증 상태 변화 감지 (로그인/로그아웃/토큰 갱신)
+  // Android: OAuth 콜백 딥링크 리스닝
+  if (window.Capacitor?.isNativePlatform()) {
+    const CapApp = window.Capacitor?.Plugins?.App;
+    if (CapApp) {
+      CapApp.addListener('appUrlOpen', async ({ url }) => {
+        if (!url?.includes('auth-callback')) return;
+        try {
+          // PKCE(code) 또는 Implicit(access_token) 처리
+          const fakeBase = 'https://x.com/';
+          const urlObj   = new URL(url.replace('com.chorditor.app://', fakeBase));
+          const code     = urlObj.searchParams.get('code');
+          const hash     = new URLSearchParams((url.split('#')[1] || ''));
+          const at       = hash.get('access_token');
+          const rt       = hash.get('refresh_token');
+
+          let session = null;
+          if (code) {
+            const { data } = await _supabase.auth.exchangeCodeForSession(code);
+            session = data?.session;
+          } else if (at && rt) {
+            const { data } = await _supabase.auth.setSession({ access_token: at, refresh_token: rt });
+            session = data?.session;
+          }
+
+          if (session?.user) {
+            // RevenueCat과 Supabase user ID 연결
+            if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+            await fetchWebPlan();
+            renderAuthUI(session.user);
+            // 인앱 브라우저 닫기
+            const CapBrowser = window.Capacitor?.Plugins?.Browser;
+            if (CapBrowser) await CapBrowser.close().catch(() => {});
+          }
+        } catch(e) {
+          console.error('[Auth] 딥링크 처리 실패:', e);
+        }
+      });
+    }
+  }
+
+  // 인증 상태 변화 감지
   _supabase.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
+      if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
     } else {
@@ -1192,9 +1229,10 @@ async function initSupabase() {
     }
   });
 
-  // OAuth 리다이렉트 후 세션 복원
+  // 기존 세션 복원 (앱 재시작 / OAuth 리다이렉트 후)
   const { data: { session } } = await _supabase.auth.getSession();
   if (session?.user) {
+    if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
     await fetchWebPlan();
     renderAuthUI(session.user);
   } else {
@@ -1204,14 +1242,29 @@ async function initSupabase() {
 
 async function signInWithGoogle() {
   if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
-  await _supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: location.origin + location.pathname }
-  });
+
+  if (window.Capacitor?.isNativePlatform()) {
+    // Android: 인앱 브라우저로 OAuth 열기 → 딥링크로 콜백
+    const { data, error } = await _supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { skipBrowserRedirect: true, redirectTo: 'com.chorditor.app://auth-callback' }
+    });
+    if (error || !data?.url) { alert('로그인 시작 실패: ' + (error?.message || '')); return; }
+    const CapBrowser = window.Capacitor?.Plugins?.Browser;
+    if (CapBrowser) await CapBrowser.open({ url: data.url, windowName: '_self' });
+    else window.open(data.url, '_blank');
+  } else {
+    // 웹: 일반 OAuth 리다이렉트
+    await _supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: location.origin + location.pathname }
+    });
+  }
 }
 
 async function signInWithApple() {
   if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
+  // Apple 로그인은 웹 전용 (Android 미지원)
   await _supabase.auth.signInWithOAuth({
     provider: 'apple',
     options: { redirectTo: location.origin + location.pathname }
@@ -1239,11 +1292,11 @@ function renderAuthUI(user) {
   const footer = document.getElementById('sidebar-auth-footer');
   if (!footer) return;
 
-  // Android 네이티브에서는 로그인 UI 숨김
-  if (window.Capacitor?.isNativePlatform()) {
-    footer.style.display = 'none';
-    return;
-  }
+  footer.style.display = ''; // Android + 웹 모두 표시
+
+  // Apple 로그인은 Android에서 숨김
+  const appleBtn = document.getElementById('auth-apple-btn');
+  if (appleBtn) appleBtn.style.display = window.Capacitor?.isNativePlatform() ? 'none' : '';
 
   const loggedOut = document.getElementById('auth-logged-out');
   const loggedIn  = document.getElementById('auth-logged-in');
@@ -1302,6 +1355,20 @@ async function purchasePlan(planId) {
     alert('인앱 결제를 사용할 수 없는 환경입니다.');
     return;
   }
+
+  // 구매 전 Google 로그인 필수 (RevenueCat ↔ Supabase 연결을 위해)
+  if (_supabase) {
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (!session?.user) {
+      if (confirm('구독하려면 Google 로그인이 필요합니다.\n로그인하시겠어요?')) {
+        await signInWithGoogle();
+      }
+      return;
+    }
+    // RevenueCat App User ID = Supabase user UUID 로 설정
+    await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+  }
+
   const productId = planId === 'pro' ? PRODUCT_PRO : PRODUCT_STANDARD;
   try {
     const { offerings } = await window._RC.getOfferings();
@@ -1314,7 +1381,8 @@ async function purchasePlan(planId) {
     if (!pkg) throw new Error('상품을 찾을 수 없습니다: ' + productId);
 
     await window._RC.purchasePackage({ aPackage: pkg });
-    await syncPlanFromBilling();
+    await syncPlanFromBilling(); // RevenueCat 로컬 상태 즉시 반영
+    await fetchWebPlan();        // DB에서도 플랜 확인 (webhook 처리 후)
     closePlanModal();
     alert('구독이 완료되었습니다!');
   } catch(e) {

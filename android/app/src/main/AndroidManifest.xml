@@ -29,6 +29,14 @@
                 <data android:scheme="chorditor" android:host="import" />
             </intent-filter>
 
+            <!-- Supabase OAuth 콜백 딥링크 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.chorditor.app" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider
