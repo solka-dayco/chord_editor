@@ -1147,8 +1147,20 @@ let _supabase = null;
 async function initSupabase() {
   if (!window.supabase) { console.warn('[Supabase] 라이브러리 로드 안됨'); renderAuthUI(null); return; }
 
-  // Android/웹 공통으로 Supabase 초기화
-  _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  // Supabase 초기화
+  // Android: 세션 관리를 직접 하므로 supabase-js의 자동갱신/저장 비활성화 (WebView hang 방지)
+  // 웹: 기본 옵션으로 supabase-js가 세션을 관리
+  if (window.Capacitor?.isNativePlatform()) {
+    _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+      auth: {
+        autoRefreshToken:  false,
+        persistSession:    false,
+        detectSessionInUrl: false,
+      }
+    });
+  } else {
+    _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  }
 
   // Android: OAuth 콜백 딥링크 리스닝
   if (window.Capacitor?.isNativePlatform()) {
@@ -1208,16 +1220,18 @@ async function initSupabase() {
     }
   });
 
-  // 기존 세션 복원 (앱 재시작 / OAuth 리다이렉트 후)
-  const { data: { session } } = await _supabase.auth.getSession();
-  if (session?.user) {
-    // 웹 전용: 기존 세션 있으면 _authReady 설정 (tryAutoSignIn에서 시작하기 버튼 표시용)
-    if (!window.Capacitor?.isNativePlatform()) _authReady = true;
-    if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-    await fetchWebPlan();
-    renderAuthUI(session.user);
-  } else {
-    renderAuthUI(null);
+  // 기존 세션 복원 (웹 전용)
+  // Android는 getSession()이 Capacitor WebView에서 hang되므로 tryAutoSignIn()이 직접 처리
+  if (!window.Capacitor?.isNativePlatform()) {
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (session?.user) {
+      _authReady = true;
+      if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+      await fetchWebPlan();
+      renderAuthUI(session.user);
+    } else {
+      renderAuthUI(null);
+    }
   }
 }
 
