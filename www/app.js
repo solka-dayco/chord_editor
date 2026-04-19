@@ -867,7 +867,6 @@ async function savePNG() {
     } catch (e) {
       const msg = e?.message || e?.errorMessage || JSON.stringify(e);
       console.error('저장 실패:', e);
-      alert('저장 실패: ' + msg);
     }
   } else {
     const link = document.createElement('a');
@@ -1251,7 +1250,7 @@ async function fetchPlanWithToken(accessToken) {
 }
 
 async function signInWithGoogle() {
-  if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
+  if (!_supabase) { console.error('[Auth] Supabase 미초기화'); return; }
 
   if (window.Capacitor?.isNativePlatform()) {
     try {
@@ -1289,7 +1288,6 @@ async function signInWithGoogle() {
       const msg = e?.message || JSON.stringify(e) || '알 수 없는 오류';
       if (!msg.includes('canceled') && !msg.includes('cancel')) {
         console.error('[Auth] Google 로그인 실패:', e);
-        alert('로그인 실패: ' + msg);
       }
     }
   } else {
@@ -1443,7 +1441,7 @@ async function onboardingSignIn() {
     }
   } catch(e) {
     const msg = e?.message || '';
-    if (!msg.includes('cancel')) alert('로그인 실패: ' + msg);
+    if (!msg.includes('cancel')) console.error('[Auth] 온보딩 로그인 실패:', e);
   }
 }
 
@@ -1462,7 +1460,7 @@ function closeTutorial() {
 }
 
 async function signInWithApple() {
-  if (!_supabase) { alert('Supabase가 초기화되지 않았습니다.'); return; }
+  if (!_supabase) { console.error('[Auth] Supabase 미초기화'); return; }
   // Apple 로그인은 웹 전용 (Android 미지원)
   await _supabase.auth.signInWithOAuth({
     provider: 'apple',
@@ -1611,7 +1609,6 @@ async function restorePurchases() {
     alert('구매 내역을 복원했습니다.');
   } catch(e) {
     console.error('[Billing] restorePurchases 실패:', e);
-    alert('복원 실패: ' + (e?.message || JSON.stringify(e)));
   }
 }
 
