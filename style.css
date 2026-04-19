@@ -60,6 +60,15 @@ body {
   user-select: none;
 }
 .sidebar-logo:hover { color: var(--accent); }
+.sidebar-version {
+  font-family: 'Pretendard', sans-serif;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  margin-left: 5px;
+  vertical-align: middle;
+}
 
 .icon-btn {
   background: none;

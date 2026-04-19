@@ -1415,6 +1415,16 @@ function showSaveToast() {
   _toastTimer = setTimeout(() => el.classList.remove('show'), 1500);
 }
 
+async function initAppVersion() {
+  try {
+    const App = window.Capacitor?.Plugins?.App;
+    if (!App) return; // 웹 환경에서는 표시 안 함
+    const { version } = await App.getInfo();
+    const el = document.getElementById('app-version');
+    if (el && version) el.textContent = 'v' + version;
+  } catch(e) { /* 무시 */ }
+}
+
 function showOnboarding() {
   const el = document.getElementById('onboarding-overlay');
   if (el) el.classList.remove('hidden');
@@ -4474,6 +4484,7 @@ window._handleShareImport = async function(rawCode) {
   updateExportScaleOptions();
   renderPlanBadge();
   showOnboarding(); // 항상 시작 화면 표시
+  initAppVersion(); // 사이드바 버전 표시
   initBilling();    // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
   initSupabase().then(() => tryAutoSignIn()); // 백그라운드에서 세션 복원 시도
 
