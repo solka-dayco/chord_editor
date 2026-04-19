@@ -1670,6 +1670,8 @@ async function restorePurchases() {
   try {
     await window._RC.restorePurchases();
     await syncPlanFromBilling();
+    // Supabase DB 플랜을 마지막에 적용 (DB에 직접 설정된 플랜이 최종 우선)
+    await fetchWebPlan();
     alert('구매 내역을 복원했습니다.');
   } catch(e) {
     console.error('[Billing] restorePurchases 실패:', e);
