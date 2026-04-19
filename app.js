@@ -1449,14 +1449,23 @@ async function onboardingSignIn() {
 const TUTORIAL_KEY = 'chorditor_tutorial_v1';
 
 function showTutorialIfNeeded() {
-  if (!localStorage.getItem(TUTORIAL_KEY)) {
+  setTimeout(() => {
+    // [DEV] 항상 표시 (main에서는 아래 주석 해제)
     document.getElementById('modal-tutorial').classList.remove('hidden');
-  }
+    // if (!localStorage.getItem(TUTORIAL_KEY)) {
+    //   document.getElementById('modal-tutorial').classList.remove('hidden');
+    // }
+  }, 500);
 }
 
 function closeTutorial() {
   localStorage.setItem(TUTORIAL_KEY, '1');
-  document.getElementById('modal-tutorial').classList.add('hidden');
+  const el = document.getElementById('modal-tutorial');
+  el.classList.add('closing');
+  el.addEventListener('animationend', () => {
+    el.classList.add('hidden');
+    el.classList.remove('closing');
+  }, { once: true });
 }
 
 async function signInWithApple() {
@@ -1559,9 +1568,22 @@ async function syncPlanFromBilling() {
   }
 }
 
+function showSubscriptionNoticeModal() {
+  const el = document.getElementById('modal-subscription-notice');
+  el.classList.remove('hidden', 'closing');
+}
+function closeSubscriptionNoticeModal() {
+  const el = document.getElementById('modal-subscription-notice');
+  el.classList.add('closing');
+  el.addEventListener('animationend', () => {
+    el.classList.add('hidden');
+    el.classList.remove('closing');
+  }, { once: true });
+}
+
 async function purchasePlan(planId) {
   if (!window._RC) {
-    alert('인앱 결제를 사용할 수 없는 환경입니다.');
+    showSubscriptionNoticeModal();
     return;
   }
 
@@ -1593,7 +1615,7 @@ async function purchasePlan(planId) {
   } catch(e) {
     if (e?.code !== 'PURCHASE_CANCELLED') {
       console.error('[Billing] purchasePlan 실패:', e);
-      alert('구독 중 오류가 발생했습니다: ' + (e?.message || JSON.stringify(e)));
+      showSubscriptionNoticeModal();
     }
   }
 }
@@ -4419,7 +4441,8 @@ window._handleShareImport = async function(rawCode) {
   lucide.createIcons();
   updateExportScaleOptions();
   renderPlanBadge();
-  showOnboarding(); // 항상 시작 화면 표시
+  // showOnboarding(); // [DEV] 온보딩 비활성화
+  showTutorialIfNeeded(); // [DEV] 앱 시작 시 튜토리얼 바로 표시
   initBilling();    // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
   initSupabase().then(() => tryAutoSignIn()); // 백그라운드에서 세션 복원 시도
 
