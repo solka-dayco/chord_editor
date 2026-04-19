@@ -1209,7 +1209,8 @@ async function initSupabase() {
       await fetchWebPlan();
       renderAuthUI(session.user);
       // 웹 전용: OAuth 리다이렉트 후 로그인 완료 시 자동으로 앱 진입
-      if (!window.Capacitor?.isNativePlatform() && event === 'SIGNED_IN') {
+      // window.Capacitor 자체가 없는 경우에만 웹으로 판단 (isNativePlatform() 타이밍 이슈 방지)
+      if (!window.Capacitor && event === 'SIGNED_IN') {
         _authReady = true;
         hideOnboarding();
         showTutorialIfNeeded();
