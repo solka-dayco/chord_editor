@@ -1524,7 +1524,7 @@ function renderAuthUI(user) {
 
 // ── Android 인앱 결제 (RevenueCat) ────────────────────────────
 // RevenueCat 대시보드에서 발급한 Android 앱 키로 교체하세요.
-const REVENUECAT_ANDROID_KEY = 'test_bPkuFIqjqlvFoEWDLktVfBcjlfO';
+const REVENUECAT_ANDROID_KEY = 'goog_KNGCSoBxhHnHfZuTVgJoNKglKhM';
 
 // Entitlement ID (RevenueCat 대시보드에서 설정한 값과 동일해야 함)
 const ENTITLEMENT_STANDARD = 'standard_entitlement';
