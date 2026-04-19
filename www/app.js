@@ -1196,6 +1196,12 @@ async function initSupabase() {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
+      // 웹 전용: OAuth 리다이렉트 후 로그인 완료 시 자동으로 앱 진입
+      if (!window.Capacitor?.isNativePlatform() && event === 'SIGNED_IN') {
+        _authReady = true;
+        hideOnboarding();
+        showTutorialIfNeeded();
+      }
     } else {
       setPlan('free');
       renderAuthUI(null);
@@ -1205,6 +1211,8 @@ async function initSupabase() {
   // 기존 세션 복원 (앱 재시작 / OAuth 리다이렉트 후)
   const { data: { session } } = await _supabase.auth.getSession();
   if (session?.user) {
+    // 웹 전용: 기존 세션 있으면 _authReady 설정 (tryAutoSignIn에서 시작하기 버튼 표시용)
+    if (!window.Capacitor?.isNativePlatform()) _authReady = true;
     if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
     await fetchWebPlan();
     renderAuthUI(session.user);
@@ -1409,6 +1417,17 @@ function handleStart() {
 }
 
 async function onboardingSignIn() {
+  // 웹: Supabase OAuth 리다이렉트 방식 (네이티브 플러그인 없음)
+  if (!window.Capacitor?.isNativePlatform()) {
+    if (!_supabase) return;
+    await _supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: location.origin + location.pathname }
+    });
+    return;
+  }
+
+  // 네이티브(Android): GoogleAuth 플러그인 방식
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
     if (!GoogleAuth) return;
