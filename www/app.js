@@ -1327,6 +1327,11 @@ let _authResolve = null;
 const _authPromise = new Promise(resolve => { _authResolve = resolve; });
 
 async function tryAutoSignIn() {
+  // ── DEV ONLY: 온보딩 건너뜀 (USB 디버깅 환경에서 Google 로그인 불가) ──
+  // main 병합 시 아래 3줄 제거
+  hideOnboarding(); _authReady = true; _authResolve(); return;
+  // ── /DEV ──
+
   if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
 
   // 1) 저장된 세션이 유효하면 즉시 UI 확정 → 네트워크 동기화는 백그라운드
