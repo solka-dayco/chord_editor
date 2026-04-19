@@ -513,6 +513,21 @@
   </div>
 
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- ── 모달: 구독 기능 업데이트 중 안내 ── -->
+  <div class="modal-overlay hidden" id="modal-subscription-notice" onclick="closeSubscriptionNoticeModal()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:320px; text-align:center;">
+      <div class="modal-body" style="padding:32px 24px;">
+        <p style="font-size:15px; line-height:1.9; color:var(--text-primary);">
+          현재 기능 업데이트 중입니다.<br>다음에 다시 시도해주세요.<br>
+          <span style="color:var(--text-muted); font-size:13px;">업데이트 완료 후 공지사항으로 알려드리겠습니다.</span>
+        </p>
+      </div>
+      <div class="modal-footer" style="justify-content:center; padding-top:0;">
+        <button class="btn btn-primary" onclick="closeSubscriptionNoticeModal()">확인</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
   <script src="voicing-library.js"></script>
 </body>

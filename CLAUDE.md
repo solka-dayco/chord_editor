@@ -142,3 +142,9 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 # 홈 아이콘 흰 화면 버그 (One UI 7 / Galaxy S25)
 - `mipmap-anydpi-v26/ic_launcher.xml`의 `<monochrome>` 레이어가 Samsung 런처에서 렌더링 실패 시 아이콘 전체를 흰 화면으로 표시함.
 - 해결: `<monochrome>` 레이어 제거, foreground는 `@mipmap/ic_launcher_foreground` 직접 참조 유지.
+
+# UI 조정 시 주의사항
+- 자식 컨테이너 내부의 위치를 조정하거나 정렬할 때는 항상 부모 컨테이너의 값을 먼저 참조한다.
+
+# 버튼 hidden 관련 주의사항
+- 원인 예시: .onboarding-btn { display: flex } 은 있었지만 .onboarding-btn.hidden { display: none } 규칙이 없어서 hidden 클래스를 붙여도 flex가 계속 유지됐습니다. 다른 요소들(. modal-overlay.hidden, .view.hidden 등)은 모두 명시적으로 선언되어 있었는데 이것만 누락.

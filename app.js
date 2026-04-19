@@ -1561,9 +1561,16 @@ async function syncPlanFromBilling() {
   }
 }
 
+function showSubscriptionNoticeModal() {
+  document.getElementById('modal-subscription-notice').classList.remove('hidden');
+}
+function closeSubscriptionNoticeModal() {
+  document.getElementById('modal-subscription-notice').classList.add('hidden');
+}
+
 async function purchasePlan(planId) {
   if (!window._RC) {
-    alert('인앱 결제를 사용할 수 없는 환경입니다.');
+    showSubscriptionNoticeModal();
     return;
   }
 
@@ -1595,7 +1602,7 @@ async function purchasePlan(planId) {
   } catch(e) {
     if (e?.code !== 'PURCHASE_CANCELLED') {
       console.error('[Billing] purchasePlan 실패:', e);
-      alert('구독 중 오류가 발생했습니다: ' + (e?.message || JSON.stringify(e)));
+      showSubscriptionNoticeModal();
     }
   }
 }
