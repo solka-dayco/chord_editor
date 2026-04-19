@@ -859,41 +859,15 @@ async function savePNG() {
 
   if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     try {
-      const { Filesystem, Media } = window.Capacitor.Plugins;
-      const tempResult = await Filesystem.writeFile({
-        path: fileName, data: base64, directory: 'CACHE', recursive: true,
-      });
-      const permStatus = await Media.checkPermissions();
-      const isGranted = permStatus.photos === 'granted' ||
-                        permStatus.publicStorage === 'granted' ||
-                        permStatus.publicStorage13Plus === 'granted';
-      if (!isGranted) {
-        const reqStatus = await Media.requestPermissions();
-        const isReqGranted = reqStatus.photos === 'granted' ||
-                             reqStatus.publicStorage === 'granted' ||
-                             reqStatus.publicStorage13Plus === 'granted';
-        if (!isReqGranted) { alert('갤러리 접근 권한이 필요합니다.'); return; }
-      }
-      let albumId = null;
-      try {
-        const { albums } = await Media.getAlbums();
-        const existing = albums.find(a => a.name === 'Chorditor');
-        if (existing) { albumId = existing.identifier; }
-        else {
-          await Media.createAlbum({ name: 'Chorditor' });
-          const { albums: newAlbums } = await Media.getAlbums();
-          const created = newAlbums.find(a => a.name === 'Chorditor');
-          if (created) albumId = created.identifier;
-        }
-      } catch(e) { /* 앨범 처리 실패 시 앨범 없이 저장 */ }
-      const saveOpts = { path: tempResult.uri };
-      if (albumId) saveOpts.albumIdentifier = albumId;
-      await Media.savePhoto(saveOpts);
-      await Filesystem.deleteFile({ path: fileName, directory: 'CACHE' });
-      alert('갤러리에 저장되었습니다.');
+      const SaveImage = window.Capacitor.Plugins.SaveImage;
+      const safeName = fileName.replace(/[^\w.\-]/g, '_');
+      // 네이티브 플러그인으로 MediaStore에 직접 저장 (권한 불필요, Android 10+)
+      await SaveImage.saveToGallery({ base64, fileName: safeName });
+      showSaveToast();
     } catch (e) {
+      const msg = e?.message || e?.errorMessage || JSON.stringify(e);
       console.error('저장 실패:', e);
-      alert('저장 실패: ' + JSON.stringify(e));
+      alert('저장 실패: ' + msg);
     }
   } else {
     const link = document.createElement('a');
@@ -1327,28 +1301,37 @@ async function signInWithGoogle() {
 }
 
 // Android 앱 시작 시 자동 로그인 시도
-async function tryAutoSignIn() {
-  if (!window.Capacitor?.isNativePlatform()) return;
+let _authReady = false; // 세션 복원 성공 여부
+let _authResolve = null;
+const _authPromise = new Promise(resolve => { _authResolve = resolve; });
 
-  // 1) 저장된 세션이 유효하면 즉시 복원
+async function tryAutoSignIn() {
+  if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
+
+  // 1) 저장된 세션이 유효하면 즉시 UI 확정 → 네트워크 동기화는 백그라운드
   try {
     const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
     if (stored) {
       const session = JSON.parse(stored);
       const now = Math.floor(Date.now() / 1000);
       if (session.user && session.expires_at > now) {
-        if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-        await fetchPlanWithToken(session.access_token);
+        // ✅ 세션 유효 확인 즉시 완료 신호 → 로딩 끝, 버튼 표시
+        _authReady = true;
         renderAuthUI(session.user);
+        _authResolve();
+        _showOnboardingButtons();
+        // 플랜/RevenueCat 동기화는 백그라운드에서
+        if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+        fetchPlanWithToken(session.access_token).catch(() => {});
         return;
       }
     }
   } catch(e) { /* 무시 */ }
 
-  // 2) Google 무음 로그인 시도 (이전에 한 번이라도 로그인한 경우)
+  // 2) 저장된 세션 없음 → Google 무음 로그인 시도 (타임아웃 5초)
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
-    if (!GoogleAuth) { showOnboarding(); return; }
+    if (!GoogleAuth) return;
 
     await GoogleAuth.initialize({
       clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
@@ -1356,29 +1339,59 @@ async function tryAutoSignIn() {
       grantOfflineAccess: true,
     });
 
-    const googleUser = await GoogleAuth.refresh();
+    // refresh에 5초 타임아웃 적용
+    const googleUser = await Promise.race([
+      GoogleAuth.refresh(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
     const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
-    if (!idToken) { showOnboarding(); return; }
+    if (!idToken) return;
 
     const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
       body: JSON.stringify({ provider: 'google', id_token: idToken }),
     });
-    if (!rawResp.ok) { showOnboarding(); return; }
+    if (!rawResp.ok) return;
     const rawJson = await rawResp.json();
 
     const session = saveSessionToStorage(rawJson);
     if (session.user) {
-      if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-      await fetchPlanWithToken(session.access_token);
+      _authReady = true;
       renderAuthUI(session.user);
+      // 플랜/RevenueCat 동기화는 백그라운드에서
+      if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+      fetchPlanWithToken(session.access_token).catch(() => {});
     }
   } catch(e) {
-    // 무음 로그인 불가 → 온보딩 화면 표시
-    console.log('[Auth] 자동 로그인 불가, 온보딩 표시:', e?.message || e);
-    showOnboarding();
+    console.log('[Auth] 자동 로그인 불가:', e?.message || e);
+  } finally {
+    _authResolve();
+    _showOnboardingButtons();
   }
+}
+
+function _showOnboardingButtons() {
+  document.getElementById('onboarding-loading')?.classList.add('hidden');
+  if (_authReady) {
+    document.getElementById('onboarding-start-btn')?.classList.remove('hidden');
+    document.getElementById('onboarding-switch-btn')?.classList.remove('hidden');
+  } else {
+    document.getElementById('onboarding-google-btn')?.classList.remove('hidden');
+  }
+}
+
+// 저장 완료 체크 애니메이션
+let _toastTimer = null;
+function showSaveToast() {
+  const el = document.getElementById('save-toast');
+  if (!el) return;
+  if (_toastTimer) clearTimeout(_toastTimer);
+  // 애니메이션 재시작을 위해 클래스 제거 후 reflow
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 1500);
 }
 
 function showOnboarding() {
@@ -1389,6 +1402,12 @@ function showOnboarding() {
 function hideOnboarding() {
   const el = document.getElementById('onboarding-overlay');
   if (el) el.classList.add('hidden');
+}
+
+// 시작하기 버튼 핸들러 (로그인된 사용자만 도달)
+function handleStart() {
+  hideOnboarding();
+  showTutorialIfNeeded();
 }
 
 async function onboardingSignIn() {
@@ -1420,11 +1439,26 @@ async function onboardingSignIn() {
       await fetchPlanWithToken(session.access_token);
       renderAuthUI(session.user);
       hideOnboarding();
+      showTutorialIfNeeded();
     }
   } catch(e) {
     const msg = e?.message || '';
     if (!msg.includes('cancel')) alert('로그인 실패: ' + msg);
   }
+}
+
+// ── 튜토리얼 모달 ──
+const TUTORIAL_KEY = 'chorditor_tutorial_v1';
+
+function showTutorialIfNeeded() {
+  if (!localStorage.getItem(TUTORIAL_KEY)) {
+    document.getElementById('modal-tutorial').classList.remove('hidden');
+  }
+}
+
+function closeTutorial() {
+  localStorage.setItem(TUTORIAL_KEY, '1');
+  document.getElementById('modal-tutorial').classList.add('hidden');
 }
 
 async function signInWithApple() {
@@ -4388,8 +4422,9 @@ window._handleShareImport = async function(rawCode) {
   lucide.createIcons();
   updateExportScaleOptions();
   renderPlanBadge();
-  initBilling();  // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
-  initSupabase().then(() => tryAutoSignIn()); // Supabase 초기화 후 자동 로그인 시도
+  showOnboarding(); // 항상 시작 화면 표시
+  initBilling();    // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
+  initSupabase().then(() => tryAutoSignIn()); // 백그라운드에서 세션 복원 시도
 
   // 새 프로젝트 모달 Enter 키 지원
   document.getElementById('create-project-name-input')

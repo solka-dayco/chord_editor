@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SaveImagePlugin.class);
         super.onCreate(savedInstanceState);
         pendingCode = extractCode(getIntent());
     }

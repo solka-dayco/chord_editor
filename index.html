@@ -180,16 +180,17 @@
           <!-- ── 액션 ── -->
           <div class="actions">
             <span class="hint">격자를 클릭해 입력 · 다시 클릭하면 제거</span>
-            <div class="btn-group">
-              <button class="btn btn-ghost" onclick="resetAll()">초기화</button>
-              <button class="btn btn-ghost" onclick="strumChord()">▶ 재생</button>
-              <select id="export-scale" class="export-select">
-                <option value="0.5">x0.5 (200×150)</option>
-                <option value="1" selected>x1 (400×300)</option>
-                <option value="2">x2 (800×600)</option>
-                <option value="3">x3 (1200×900)</option>
+            <div class="action-bar">
+              <button class="ab-btn" onclick="resetAll()">초기화</button>
+              <button class="ab-btn" onclick="strumChord()">▶ 재생</button>
+              <span class="ab-spacer"></span>
+              <select id="export-scale" class="ab-select">
+                <option value="0.5">x0.5</option>
+                <option value="1" selected>x1</option>
+                <option value="2">x2</option>
+                <option value="3">x3</option>
               </select>
-              <button class="btn btn-primary" onclick="savePNG()">PNG 저장</button>
+              <button class="ab-btn ab-btn-primary" onclick="savePNG()">저장</button>
             </div>
           </div>
 
@@ -440,20 +441,74 @@
     저장 공간이 부족합니다. 일부 내용이 저장되지 않을 수 있어요.
   </div>
 
-  <!-- ── 온보딩 오버레이 (최초 실행 시만 표시) ── -->
+  <!-- ── 저장 완료 체크 애니메이션 ── -->
+  <div class="save-check-overlay" id="save-toast">
+    <svg class="save-check-svg" viewBox="0 0 52 52">
+      <circle class="save-check-circle" cx="26" cy="26" r="23" fill="none"/>
+      <polyline class="save-check-mark" points="14,27 22,35 38,18" fill="none"/>
+    </svg>
+  </div>
+
+  <!-- ── 시작 화면 (항상 표시) ── -->
   <div class="onboarding-overlay hidden" id="onboarding-overlay">
     <div class="onboarding-card">
       <div class="onboarding-logo">CHORDITOR</div>
       <p class="onboarding-desc">기타 코드표 제작 도구</p>
-      <button class="btn onboarding-btn" onclick="onboardingSignIn()">
+      <div class="onboarding-loading" id="onboarding-loading">
+        <span class="onboarding-loading-dot"></span>
+        <span class="onboarding-loading-dot"></span>
+        <span class="onboarding-loading-dot"></span>
+      </div>
+      <button class="onboarding-start-btn hidden" id="onboarding-start-btn" onclick="handleStart()">시작하기</button>
+      <span class="onboarding-switch-account hidden" id="onboarding-switch-btn" onclick="onboardingSignIn()">다른 계정으로 변경</span>
+      <button class="btn onboarding-btn hidden" id="onboarding-google-btn" onclick="onboardingSignIn()">
         <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
           <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
           <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
           <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
           <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
         </svg>
-        Google 계정으로 시작하기
+        Google 계정으로 계속하기
       </button>
+    </div>
+    <div class="onboarding-footer">
+      <p>© 2025 LEE-HANSOL. All rights reserved.</p>
+      <p>Chorditor · Guitar Chord Editor</p>
+    </div>
+  </div>
+
+  <!-- ── 튜토리얼 모달 ── -->
+  <div class="modal-overlay hidden" id="modal-tutorial">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Chorditor</span>
+      </div>
+      <div class="modal-body tutorial-body">
+        <div class="tutorial-content">
+          <h3 class="tutorial-section">코드 에디터 (메인화면)</h3>
+          <ul class="tutorial-list">
+            <li>만들고 싶은 프랫에 Dot 찍고 뮤트 적용하기.</li>
+            <li>B 버튼으로 바레 적용</li>
+            <li>프랫번호로 위치 조정 가능</li>
+            <li>재생 버튼으로 들어 볼 수 있음</li>
+            <li>코드 이름은 직접 선택해야 함. (우측에 추천 코드명이 나타남. 복잡한 코드의 경우는 결과가 뜨지 않을 수 있음)</li>
+            <li>갤러리에 직접 저장하거나 프로젝트에 모아둘 수 있음</li>
+          </ul>
+          <div class="tutorial-divider"></div>
+          <h3 class="tutorial-section">프로젝트 페이지</h3>
+          <ul class="tutorial-list">
+            <li>왼쪽 사이드바를 열고 + 버튼으로 프로젝트 생성</li>
+            <li>코드 슬롯에 모아뒀던 코드를 드래그해서 삽입. 아래 텍스트 입력란엔 메모, 가사 등 원하는 텍스트를 작성.</li>
+            <li class="tutorial-warning">⚠️ 주의: 현재 클립보드를 통한 붙여넣기 버그가 해결되지 않음. 반드시 꾹 눌러서 직접 붙여넣기로 붙여넣어야 정상적으로 텍스트가 적용됨.</li>
+            <li>BPM, 카포, 메트로놈 on/off 가능.</li>
+            <li>재생을 통해서 처음부터 BPM에 맞게 코드가 재생됨. (4칸 모드 : 코드슬롯 당 1/2마디, 8칸 모드 : 코드슬롯 당 1/4마디) 중간에 코드 터치 시 그 지점부터 재생 가능.</li>
+            <li>공유 버튼으로 제목과 텍스를 제외한 모든 데이터 공유가능. (저작권 문제로 텍스트 공유는 안되도록 했습니다ㅎㅎ...)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeTutorial()">확인</button>
+      </div>
     </div>
   </div>
 
