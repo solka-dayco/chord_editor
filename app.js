@@ -1450,11 +1450,9 @@ const TUTORIAL_KEY = 'chorditor_tutorial_v1';
 
 function showTutorialIfNeeded() {
   setTimeout(() => {
-    // [DEV] 항상 표시 (main에서는 아래 주석 해제)
-    document.getElementById('modal-tutorial').classList.remove('hidden');
-    // if (!localStorage.getItem(TUTORIAL_KEY)) {
-    //   document.getElementById('modal-tutorial').classList.remove('hidden');
-    // }
+    if (!localStorage.getItem(TUTORIAL_KEY)) {
+      document.getElementById('modal-tutorial').classList.remove('hidden');
+    }
   }, 500);
 }
 
@@ -4441,8 +4439,7 @@ window._handleShareImport = async function(rawCode) {
   lucide.createIcons();
   updateExportScaleOptions();
   renderPlanBadge();
-  // showOnboarding(); // [DEV] 온보딩 비활성화
-  showTutorialIfNeeded(); // [DEV] 앱 시작 시 튜토리얼 바로 표시
+  showOnboarding(); // 항상 시작 화면 표시
   initBilling();    // Android 인앱 결제 초기화 (비동기, 실패해도 앱 동작 유지)
   initSupabase().then(() => tryAutoSignIn()); // 백그라운드에서 세션 복원 시도
 
