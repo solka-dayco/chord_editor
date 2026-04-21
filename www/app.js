@@ -1405,6 +1405,17 @@ function handleStart() {
   showTutorialIfNeeded();
 }
 
+// 다른 계정으로 변경 → 로그아웃 후 Google 로그인 버튼 표시
+function onboardingSwitchAccount() {
+  localStorage.removeItem(SUPABASE_STORAGE_KEY);
+  setPlan('free');
+  renderAuthUI(null);
+  _authReady = false;
+  document.getElementById('onboarding-start-btn')?.classList.add('hidden');
+  document.getElementById('onboarding-switch-btn')?.classList.add('hidden');
+  document.getElementById('onboarding-google-btn')?.classList.remove('hidden');
+}
+
 async function onboardingSignIn() {
   // 웹: Supabase OAuth 리다이렉트 방식 (네이티브 플러그인 없음)
   if (!window.Capacitor?.isNativePlatform()) {
