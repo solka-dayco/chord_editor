@@ -1455,9 +1455,15 @@ async function onboardingSignIn() {
   }
 
   // 네이티브(Android): GoogleAuth 플러그인 방식
+  const signinLoader = document.getElementById('onboarding-signin-loading');
+  const googleBtn    = document.getElementById('onboarding-google-btn');
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
     if (!GoogleAuth) return;
+
+    // 로그인 중 스피너 표시
+    if (googleBtn)    googleBtn.classList.add('hidden');
+    if (signinLoader) signinLoader.classList.remove('hidden');
 
     await GoogleAuth.initialize({
       clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
@@ -1488,6 +1494,9 @@ async function onboardingSignIn() {
   } catch(e) {
     const msg = e?.message || '';
     if (!msg.includes('cancel')) console.error('[Auth] 온보딩 로그인 실패:', e);
+    // 실패 시 스피너 숨기고 버튼 복원
+    if (signinLoader) signinLoader.classList.add('hidden');
+    if (googleBtn)    googleBtn.classList.remove('hidden');
   }
 }
 
@@ -1612,22 +1621,9 @@ async function syncPlanFromBilling() {
   }
 }
 
-function showSubscriptionNoticeModal() {
-  const el = document.getElementById('modal-subscription-notice');
-  el.classList.remove('hidden', 'closing');
-}
-function closeSubscriptionNoticeModal() {
-  const el = document.getElementById('modal-subscription-notice');
-  el.classList.add('closing');
-  el.addEventListener('animationend', () => {
-    el.classList.add('hidden');
-    el.classList.remove('closing');
-  }, { once: true });
-}
-
 async function purchasePlan(planId) {
   if (!window._RC) {
-    showSubscriptionNoticeModal();
+    alert('결제 초기화 중입니다. 잠시 후 다시 시도해주세요.');
     return;
   }
 
@@ -1659,7 +1655,7 @@ async function purchasePlan(planId) {
   } catch(e) {
     if (e?.code !== 'PURCHASE_CANCELLED') {
       console.error('[Billing] purchasePlan 실패:', e);
-      showSubscriptionNoticeModal();
+      alert('결제 중 오류가 발생했습니다. 다시 시도해주세요.');
     }
   }
 }

@@ -1831,6 +1831,30 @@ canvas {
 .onboarding-loading-dot:nth-child(2) { animation-delay: 0.2s; }
 .onboarding-loading-dot:nth-child(3) { animation-delay: 0.4s; }
 
+/* ── 로그인 중 스피너 ── */
+.onboarding-signin-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+}
+.onboarding-signin-loading.hidden { display: none; }
+.onboarding-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: onboarding-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes onboarding-spin {
+  to { transform: rotate(360deg); }
+}
+.onboarding-signin-loading-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 /* ── 시작하기 버튼 ── */
 .onboarding-start-btn {
   padding: 13px 44px;
