@@ -1350,48 +1350,10 @@ async function tryAutoSignIn() {
     }
   } catch(e) { /* 무시 */ }
 
-  // 2) 저장된 세션 없음 → Google 무음 로그인 시도 (타임아웃 5초)
-  try {
-    const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
-    if (!GoogleAuth) return;
-
-    await GoogleAuth.initialize({
-      clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
-      scopes: ['profile', 'email'],
-      grantOfflineAccess: true,
-    });
-
-    // refresh에 5초 타임아웃 적용
-    const googleUser = await Promise.race([
-      GoogleAuth.refresh(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-    ]);
-    const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
-    if (!idToken) return;
-
-    const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
-      body: JSON.stringify({ provider: 'google', id_token: idToken }),
-    });
-    if (!rawResp.ok) return;
-    const rawJson = await rawResp.json();
-
-    const session = saveSessionToStorage(rawJson);
-    if (session.user) {
-      _authReady = true;
-      renderAuthUI(session.user);
-      // 세션 저장만 하고 온보딩은 표시 → 시작하기 버튼으로 진입
-      // (다음 실행부터는 저장된 세션으로 Step 1에서 자동 건너뜀)
-      if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-      fetchPlanWithToken(session.access_token).catch(() => {});
-    }
-  } catch(e) {
-    console.log('[Auth] 자동 로그인 불가:', e?.message || e);
-  } finally {
-    _authResolve();
-    _showOnboardingButtons(); // 인증 성공이면 "시작하기", 실패면 "Google 로그인" 표시
-  }
+  // 2) 저장된 세션 없음 → Google 로그인 버튼 표시
+  // (GoogleAuth.refresh() 선제 호출 제거 — signIn()과 충돌하여 "Something went wrong" 유발)
+  _authResolve();
+  _showOnboardingButtons();
 }
 
 function _showOnboardingButtons() {
@@ -1482,7 +1444,6 @@ async function onboardingSignIn() {
     });
     const rawJson = await rawResp.json();
     if (!rawResp.ok) throw new Error(rawJson?.error_description || 'Supabase 인증 실패');
-
     const session = saveSessionToStorage(rawJson);
     if (session.user) {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
@@ -1492,8 +1453,10 @@ async function onboardingSignIn() {
       showTutorialIfNeeded();
     }
   } catch(e) {
-    const msg = e?.message || '';
-    if (!msg.includes('cancel')) console.error('[Auth] 온보딩 로그인 실패:', e);
+    const msg = e?.message || String(e) || '';
+    if (!msg.toLowerCase().includes('cancel')) {
+      console.error('[Auth] 온보딩 로그인 실패:', e);
+    }
     // 실패 시 스피너 숨기고 버튼 복원
     if (signinLoader) signinLoader.classList.add('hidden');
     if (googleBtn)    googleBtn.classList.remove('hidden');
