@@ -1230,6 +1230,8 @@ async function initSupabase() {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
+      hideOnboarding();
+      showTutorialIfNeeded();
     } else {
       renderAuthUI(null);
     }
@@ -1334,18 +1336,19 @@ async function tryAutoSignIn() {
 
   if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
 
-  // 1) 저장된 세션이 유효하면 즉시 UI 확정 → 네트워크 동기화는 백그라운드
+  // 1) 저장된 세션이 유효하면 온보딩 건너뜀 → 바로 메인으로
   try {
     const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
     if (stored) {
       const session = JSON.parse(stored);
       const now = Math.floor(Date.now() / 1000);
       if (session.user && session.expires_at > now) {
-        // ✅ 세션 유효 확인 즉시 완료 신호 → 로딩 끝, 버튼 표시
+        // ✅ 세션 유효 → 온보딩 없이 바로 진입
         _authReady = true;
         renderAuthUI(session.user);
         _authResolve();
-        _showOnboardingButtons();
+        hideOnboarding();
+        showTutorialIfNeeded();
         // 플랜/RevenueCat 동기화는 백그라운드에서
         if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
         fetchPlanWithToken(session.access_token).catch(() => {});
@@ -1385,6 +1388,8 @@ async function tryAutoSignIn() {
     if (session.user) {
       _authReady = true;
       renderAuthUI(session.user);
+      hideOnboarding();
+      showTutorialIfNeeded();
       // 플랜/RevenueCat 동기화는 백그라운드에서
       if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       fetchPlanWithToken(session.access_token).catch(() => {});
@@ -1393,7 +1398,7 @@ async function tryAutoSignIn() {
     console.log('[Auth] 자동 로그인 불가:', e?.message || e);
   } finally {
     _authResolve();
-    _showOnboardingButtons();
+    if (!_authReady) _showOnboardingButtons(); // 자동 로그인 실패 시에만 온보딩 표시
   }
 }
 
@@ -1495,18 +1500,18 @@ async function onboardingSignIn() {
 }
 
 // ── 튜토리얼 모달 ──
-const TUTORIAL_KEY = 'chorditor_tutorial_v1';
+// 세션(앱 실행) 단위로 관리 — 앱 재시작마다 초기화되어 매번 노출
+let _tutorialShownThisSession = false;
 
 function showTutorialIfNeeded() {
+  if (_tutorialShownThisSession) return;
   setTimeout(() => {
-    if (!localStorage.getItem(TUTORIAL_KEY)) {
-      document.getElementById('modal-tutorial').classList.remove('hidden');
-    }
+    _tutorialShownThisSession = true;
+    document.getElementById('modal-tutorial').classList.remove('hidden');
   }, 500);
 }
 
 function closeTutorial() {
-  localStorage.setItem(TUTORIAL_KEY, '1');
   const el = document.getElementById('modal-tutorial');
   el.classList.add('closing');
   el.addEventListener('animationend', () => {
