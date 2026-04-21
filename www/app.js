@@ -1230,8 +1230,7 @@ async function initSupabase() {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
-      hideOnboarding();
-      showTutorialIfNeeded();
+      // 웹도 온보딩 항상 표시 → onAuthStateChange의 hideOnboarding이 처리
     } else {
       renderAuthUI(null);
     }
@@ -1338,12 +1337,11 @@ async function tryAutoSignIn() {
       const session = JSON.parse(stored);
       const now = Math.floor(Date.now() / 1000);
       if (session.user && session.expires_at > now) {
-        // ✅ 세션 유효 → 온보딩 없이 바로 진입
+        // ✅ 세션 유효 → 온보딩은 항상 표시, 시작하기 버튼으로 진입
         _authReady = true;
         renderAuthUI(session.user);
         _authResolve();
-        hideOnboarding();
-        showTutorialIfNeeded();
+        _showOnboardingButtons();
         // 플랜/RevenueCat 동기화는 백그라운드에서
         if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
         fetchPlanWithToken(session.access_token).catch(() => {});
@@ -1383,9 +1381,8 @@ async function tryAutoSignIn() {
     if (session.user) {
       _authReady = true;
       renderAuthUI(session.user);
-      hideOnboarding();
-      showTutorialIfNeeded();
-      // 플랜/RevenueCat 동기화는 백그라운드에서
+      // 세션 저장만 하고 온보딩은 표시 → 시작하기 버튼으로 진입
+      // (다음 실행부터는 저장된 세션으로 Step 1에서 자동 건너뜀)
       if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       fetchPlanWithToken(session.access_token).catch(() => {});
     }
@@ -1393,7 +1390,7 @@ async function tryAutoSignIn() {
     console.log('[Auth] 자동 로그인 불가:', e?.message || e);
   } finally {
     _authResolve();
-    if (!_authReady) _showOnboardingButtons(); // 자동 로그인 실패 시에만 온보딩 표시
+    _showOnboardingButtons(); // 인증 성공이면 "시작하기", 실패면 "Google 로그인" 표시
   }
 }
 
