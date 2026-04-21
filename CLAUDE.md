@@ -131,6 +131,8 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 - 클립보드 히스토리에서 선택해 붙여넣기
 - 둘 다 동일하게 plain text만 들어가야 함
 
+# 쓰레기 코드가 최대한 남아있지 않도록 수정할 때 삭제할 것, 교체할 것을 정확히 구분하고 검토할 것.
+
 # 특정 기타 코드를 말할 때는 6번줄부터 순서대로 나열
 - ex. x02220 -> 6번줄 뮤트, 5번줄 개방현, 4번줄 2프랫, 3번줄 2프랫, 2번줄 2프랫, 1번줄 개방현
 
@@ -148,3 +150,7 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 
 # 버튼 hidden 관련 주의사항
 - 원인 예시: .onboarding-btn { display: flex } 은 있었지만 .onboarding-btn.hidden { display: none } 규칙이 없어서 hidden 클래스를 붙여도 flex가 계속 유지됐습니다. 다른 요소들(. modal-overlay.hidden, .view.hidden 등)은 모두 명시적으로 선언되어 있었는데 이것만 누락.
+
+# Android Google 로그인 "Something went wrong" 오류
+- **원인:** `tryAutoSignIn()`에서 `GoogleAuth.refresh()`를 호출하면 5초 타임아웃 후 reject되지만 네이티브 작업은 백그라운드에서 계속 실행됨. 이후 사용자가 Google 로그인 버튼을 눌러 `GoogleAuth.signIn()`을 호출하면 두 네이티브 작업이 충돌하여 "Something went wrong" 발생.
+- **해결:** `tryAutoSignIn()`에서 `GoogleAuth.refresh()` 호출 완전 제거. 저장된 세션(localStorage)이 없으면 즉시 Google 로그인 버튼 표시. GoogleAuth는 사용자가 직접 버튼을 눌렀을 때(`onboardingSignIn()`)만 호출.
