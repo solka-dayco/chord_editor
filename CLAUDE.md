@@ -163,6 +163,22 @@ hideOnboarding(); _authReady = true; _authResolve(); return;
 
 ⚠️ **주의:** `dev → main` (또는 `staging`) 병합/커밋 시 반드시 위 3줄을 제거해야 한다.
 
+### dev 커밋 후 USB 테스트 시 필수 동기화
+
+`android/app/src/main/assets/public/`는 `.gitignore` 대상이라 **git 커밋/체크아웃으로 자동 갱신되지 않는다.**  
+dev에서 app.js를 수정한 뒤 Android Studio로 빌드하면 **이전 파일이 그대로 사용**된다.
+
+반드시 직접 복사하거나 `cap sync`를 실행해야 한다:
+
+```bash
+# 직접 복사 (cap sync 없이 빠르게)
+cp app.js android/app/src/main/assets/public/app.js
+cp voicing-library.js android/app/src/main/assets/public/voicing-library.js
+
+# 또는
+npx cap sync
+```
+
 ---
 
 ## Android 빌드 설정
