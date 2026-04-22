@@ -154,3 +154,174 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 # Android Google 로그인 "Something went wrong" 오류
 - **원인:** `tryAutoSignIn()`에서 `GoogleAuth.refresh()`를 호출하면 5초 타임아웃 후 reject되지만 네이티브 작업은 백그라운드에서 계속 실행됨. 이후 사용자가 Google 로그인 버튼을 눌러 `GoogleAuth.signIn()`을 호출하면 두 네이티브 작업이 충돌하여 "Something went wrong" 발생.
 - **해결:** `tryAutoSignIn()`에서 `GoogleAuth.refresh()` 호출 완전 제거. 저장된 세션(localStorage)이 없으면 즉시 Google 로그인 버튼 표시. GoogleAuth는 사용자가 직접 버튼을 눌렀을 때(`onboardingSignIn()`)만 호출.
+
+# Play Console 경로 (2026년 4월 기준)
+
+## 스토어 등록정보 URL
+- 정식 경로: `main-store-listing` (이전: `store-listing`)
+
+## RevenueCat 서비스 계정 권한 확인 경로
+예전 "설정 → API 액세스"는 2026년 기준 존재하지 않음. 대체 경로:
+- **Play Console → 사용자 및 권한** (`/users-and-permissions`)
+- RevenueCat 서비스 계정 행 → **관리 →** 클릭
+- 필요 권한 (체크 확인):
+  - ✅ 앱 정보 보기 (읽기 전용)
+  - ✅ 재무 데이터 보기
+  - ✅ 주문 및 구독 관리
+
+## RevenueCat 서비스 계정 상태 확인 (2026년 기준 확인 완료)
+- Play Console 권한: **정상** (재무 데이터 보기, 주문 및 구독 관리 모두 체크됨)
+- RevenueCat 대시보드: Valid credentials ✅, Pub/Sub 권한 경고 ⚠️
+- Google Cloud IAM: "Cloud Pub/Sub Agent" 역할 설정됨 → **"게시/구독 관리자" 역할 추가 필요**
+- Pub/Sub 오류는 실시간 알림용이며 `getOfferings()` 결과와 직접 관련 없음
+
+## RevenueCat Offerings 설정 (확인 완료)
+- default Offering → Current(기본)으로 설정됨 ✅
+- `pro_monthly` 패키지 → `pro_monthly:pro-monthly-base` 연결 ✅
+- `standard_monthly` 패키지 → identifier가 `$rc_monthly`임 → 코드 `PRODUCT_STANDARD = '$rc_monthly'`로 수정 완료 ✅
+
+## Google Play 구독 상품 상태 (확인 완료)
+- 경로: Play Console → 수익 창출 → Play를 통한 수익 창출 → 정기결제
+- `pro_monthly`, `standard_monthly` 모두 **활성 기본 요금제: 1** ✅
+
+## RevenueCat getOfferings() 응답 구조 (확인 완료)
+- Capacitor 플러그인은 `{ offerings: { current, all } }` 가 아닌 `{ current, all }` 직접 반환
+- 코드에서 `offeringsResult?.offerings ?? offeringsResult` 로 양쪽 대응 처리함
+
+## 인앱 구독 테스트 주의사항
+- Play Console 개발자 계정(소유자)으로는 자기 앱 상품 구매 불가
+- 테스트 시 별도 Gmail 계정 필요 (Play Console → 설정 → 라이선스 테스트에 등록)
+- 라이선스 테스트 설정: 이메일 목록 **체크박스**까지 선택해야 활성화됨 (라디오 버튼만으로는 부족)
+- 라이선스 응답: `RESPOND_NORMALLY` → **`LICENSED`** 로 변경해야 무료 테스트 결제 가능
+- 변경 후 Play Store 캐시 삭제 + 기기 재시작 필요 (전파 최대 수시간 소요될 수 있음)
+
+## ⚠️ RevenueCat Entitlement 상품 미연결 — 결제 후 FREE 유지되는 근본 원인
+
+**증상:** 결제 완료 후 Supabase DB `plan`이 여전히 `free`, RC 고객 프로필에 "Unattached products" 표시
+
+**원인:** RC Entitlement에 상품이 연결되지 않으면 웹훅 `entitlement_ids = null` → `plan = 'free'`로 저장됨
+
+**확인 경로:**
+```
+RevenueCat → Product catalog → Entitlements
+→ standard_entitlement: Products 열에 "Add your first product" 표시 시 미연결 상태
+→ pro_entitlement: 동일 확인
+```
+
+**해결 방법:**
+```
+standard_entitlement 클릭 → Attach → Standard 월간 구독 선택 → 저장
+pro_entitlement 클릭 → Attach → Pro 월간 구독 선택 → 저장
+```
+
+**RC 고객 프로필에서 이 문제 감지하는 법:**
+- Entitlements 섹션에 "Unattached products" 항목이 있으면 → 상품-entitlement 연결 누락
+- 정상 상태: Entitlements 섹션에 `standard_entitlement` 또는 `pro_entitlement` 직접 표시
+
+**코드 방어 로직 (app.js `purchasePlan`):**
+- `customerInfo.entitlements.active`가 비어있을 때 `planId` 파라미터를 폴백으로 사용
+- Entitlement 미연결 또는 Sandbox 지연 상황 모두 대응
+
+## 현재 빌드 버전
+- 버전코드 22 / 1.0.1_pre_10 (2026-04-21 기준 staging)
+
+---
+
+# Supabase Edge Function — RevenueCat 웹훅 설정 (2026-04-22 기준)
+
+## 배포된 함수
+- 함수명: `revenuecat-webhook`
+- 소스: `supabase/functions/revenuecat-webhook/index.ts`
+- 배포 URL: `https://jbvkygeksohlysyvaoab.supabase.co/functions/v1/revenuecat-webhook`
+- **중요:** `--no-verify-jwt` 옵션으로 배포해야 함
+  - 이유: Supabase가 Authorization 헤더를 JWT로 선검증하여 RevenueCat 커스텀 토큰을 차단함
+  - 없으면 `UNAUTHORIZED_INVALID_JWT_FORMAT` 401 오류 발생
+
+## 배포 명령어
+```bash
+cd H:/Project/Project/Chords_editor
+SUPABASE_ACCESS_TOKEN=<토큰> npx supabase functions deploy revenuecat-webhook --project-ref jbvkygeksohlysyvaoab --no-verify-jwt
+```
+
+## Supabase 액세스 토큰 발급 경로
+- https://supabase.com/dashboard/account/tokens → Generate new token
+- 발급된 토큰을 `SUPABASE_ACCESS_TOKEN` 환경변수로 사용
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`는 Edge Function에 자동 주입됨 (별도 설정 불필요)
+
+## Supabase 시크릿 설정
+```bash
+SUPABASE_ACCESS_TOKEN=<토큰> npx supabase secrets set REVENUECAT_WEBHOOK_AUTH=chorditor-rc-wh-2026-xk9m3p7qvn4r --project-ref jbvkygeksohlysyvaoab
+```
+- `SUPABASE_` 접두사 변수는 예약어라 직접 설정 불가 (자동 주입됨)
+
+## RevenueCat 웹훅 설정 경로
+- RevenueCat 대시보드 → Integrations → Webhooks → **Supabase DB Sync** (이미 존재)
+- Webhook URL: `https://jbvkygeksohlysyvaoab.supabase.co/functions/v1/revenuecat-webhook`
+- Authorization header: `chorditor-rc-wh-2026-xk9m3p7qvn4r`
+- Environment: Both Production and Sandbox
+- Events: All events
+
+## Edge Function 처리 이벤트
+| 이벤트 | 처리 |
+|--------|------|
+| INITIAL_PURCHASE, RENEWAL, PRODUCT_CHANGE, UNCANCELLATION, TRANSFER | plan 갱신, status: active |
+| CANCELLATION | cancel_at_period_end: true |
+| EXPIRATION, REFUND | plan: free, status: canceled |
+| BILLING_ISSUE | status: past_due |
+
+## TRANSFER 이벤트 주의사항
+- TRANSFER 이벤트는 `app_user_id` 필드가 없고 `transferred_from` / `transferred_to` 배열을 사용
+- `transferred_to` 배열에서 `$RCAnonymousID:` 접두사가 없는 값을 app_user_id로 사용
+- app_user_id가 없으면 200 OK로 스킵 (RevenueCat 재시도 방지)
+
+## Edge Function 배포 현황 (2026-04-22 확인)
+- 배포 완료 ✅
+- Send test event → 200 OK 확인 ✅
+- `x-deno-execution-id` 헤더로 함수 실제 실행 확인
+
+## Supabase DB 함수
+```sql
+-- subscriptions 테이블 plan 직접 업데이트 (앱에서 결제 직후 호출)
+CREATE OR REPLACE FUNCTION set_my_plan(new_plan text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  UPDATE public.subscriptions
+  SET plan = new_plan, status = 'active', cancel_at_period_end = FALSE, updated_at = now()
+  WHERE user_id = auth.uid();
+END;
+$$;
+```
+
+---
+
+# 결제 시스템 아키텍처 (2026-04-22 기준 완성)
+
+## 이중 보장 흐름
+```
+결제 성공
+├── [즉시] purchasePackage() 반환 customerInfo
+│         → setPlan()             앱 UI 즉시 반영
+│         → updateSupabasePlan()  Supabase DB 직접 업데이트 (1차)
+└── [수초 내] RevenueCat 웹훅 → Edge Function → subscriptions upsert (2차)
+
+앱 재시작 시
+  _billingReady 완료 대기
+  → syncPlanFromBilling()   RC 유료 플랜이면 updateSupabasePlan()으로 DB 선반영
+  → fetchPlanWithToken()    Supabase 읽기 (이미 올바른 값)
+```
+
+## 레이스 컨디션 해결 방법
+- `initBilling()`은 `_billingReady` Promise를 노출하고 `syncPlanFromBilling()`을 호출하지 않음
+- `tryAutoSignIn()`에서 `_billingReady` 완료 후 순서 보장:
+  1. `RC.logIn()` → RC 사용자 식별
+  2. `syncPlanFromBilling()` → RC 유료이면 Supabase 업데이트
+  3. `fetchPlanWithToken()` → Supabase 읽기 (이제 올바른 값)
+- `fetchWebPlan()`을 결제/복원 직후에 호출하면 Supabase free로 덮어씀 → 절대 금지
+
+## 주요 상수 (app.js)
+```js
+const PRODUCT_STANDARD = '$rc_monthly';  // RevenueCat 실제 identifier
+const PRODUCT_PRO      = 'pro_monthly';
+const ENTITLEMENT_STANDARD = 'standard_entitlement';
+const ENTITLEMENT_PRO      = 'pro_entitlement';
+```
