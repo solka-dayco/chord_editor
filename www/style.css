@@ -1684,6 +1684,102 @@ canvas {
 }
 .plan-restore-link:hover { color: var(--text-secondary); }
 
+/* ── 플랜 모달 footer 링크 그룹 ──────────────────── */
+.plan-modal-footer-links {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── 결제 계정 확인 모달 ──────────────────────────── */
+.purchase-confirm-modal { max-width: 360px; }
+
+.purchase-confirm-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.purchase-confirm-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.purchase-confirm-account {
+  background: var(--surface-raised, #f4f4f5);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.purchase-confirm-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.purchase-confirm-email {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.purchase-confirm-notice {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  padding: 10px 12px;
+  background: #fef3c7;
+  border-radius: var(--radius);
+  border-left: 3px solid #f59e0b;
+}
+
+.purchase-confirm-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ── 결제 FAQ 모달 ─────────────────────────────────── */
+.billing-faq-modal { max-width: 480px; }
+
+.billing-faq-body {
+  padding: 8px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.faq-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.faq-item:last-child { border-bottom: none; }
+
+.faq-q {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.faq-a {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
 /* ── 업그레이드 유도 모달 ──────────────────────────── */
 .upgrade-modal {
   max-width: 320px;
@@ -1830,6 +1926,30 @@ canvas {
 }
 .onboarding-loading-dot:nth-child(2) { animation-delay: 0.2s; }
 .onboarding-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── 로그인 중 스피너 ── */
+.onboarding-signin-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+}
+.onboarding-signin-loading.hidden { display: none; }
+.onboarding-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: onboarding-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes onboarding-spin {
+  to { transform: rotate(360deg); }
+}
+.onboarding-signin-loading-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
 
 /* ── 시작하기 버튼 ── */
 .onboarding-start-btn {

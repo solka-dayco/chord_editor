@@ -842,6 +842,8 @@ async function savePNG() {
   const select = document.getElementById('export-scale');
   const scale  = parseFloat(select.value);
 
+  await refreshPlanFromDB();
+
   if (!canUseScale(scale)) {
     showUpgradeModal('scale_limit');
     return;
@@ -1136,6 +1138,23 @@ function setPlan(plan) {
   renderPlanBadge();
 }
 
+// ── 기능 접근 시 플랜 DB 재확인 (30초 스로틀) ────────────────────────────
+// 앱 실행 중 구독 만료 시에도 실시간으로 플랜이 갱신되도록 함
+let _lastPlanRefresh = 0;
+async function refreshPlanFromDB() {
+  // 로그인된 세션이 없으면 스킵
+  const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+  if (!stored) return;
+  try { if (!JSON.parse(stored)?.access_token) return; } catch { return; }
+
+  const now = Date.now();
+  if (now - _lastPlanRefresh < 30_000) return; // 30초 쿨다운
+  _lastPlanRefresh = now;
+  try {
+    await fetchWebPlan();
+  } catch(e) { /* 네트워크 오류 무시 */ }
+}
+
 // ── Supabase Auth (웹 전용) ────────────────────────────────────
 // Supabase 프로젝트 생성 후 아래 두 값을 교체하세요
 // Settings → API → Project URL / anon public
@@ -1230,6 +1249,7 @@ async function initSupabase() {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
+      // 웹도 온보딩 항상 표시 → onAuthStateChange의 hideOnboarding이 처리
     } else {
       renderAuthUI(null);
     }
@@ -1329,67 +1349,34 @@ const _authPromise = new Promise(resolve => { _authResolve = resolve; });
 async function tryAutoSignIn() {
   if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
 
-  // 1) 저장된 세션이 유효하면 즉시 UI 확정 → 네트워크 동기화는 백그라운드
+  // 1) 저장된 세션이 유효하면 온보딩 건너뜀 → 바로 메인으로
   try {
     const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
     if (stored) {
       const session = JSON.parse(stored);
       const now = Math.floor(Date.now() / 1000);
       if (session.user && session.expires_at > now) {
-        // ✅ 세션 유효 확인 즉시 완료 신호 → 로딩 끝, 버튼 표시
+        // ✅ 세션 유효 → 온보딩은 항상 표시, 시작하기 버튼으로 진입
         _authReady = true;
         renderAuthUI(session.user);
         _authResolve();
         _showOnboardingButtons();
-        // 플랜/RevenueCat 동기화는 백그라운드에서
-        if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-        fetchPlanWithToken(session.access_token).catch(() => {});
+        // RC 초기화 완료 대기 → RC 플랜 동기화(+Supabase 선반영) → Supabase 읽기
+        // 이 순서를 보장해야 fetchPlanWithToken이 올바른 값을 읽음
+        _billingReady.then(async () => {
+          if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
+          await syncPlanFromBilling(); // 유료이면 updateSupabasePlan()까지 완료
+          fetchPlanWithToken(session.access_token).catch(() => {}); // Supabase 읽기 (이미 올바른 값)
+        }).catch(() => {});
         return;
       }
     }
   } catch(e) { /* 무시 */ }
 
-  // 2) 저장된 세션 없음 → Google 무음 로그인 시도 (타임아웃 5초)
-  try {
-    const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
-    if (!GoogleAuth) return;
-
-    await GoogleAuth.initialize({
-      clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
-      scopes: ['profile', 'email'],
-      grantOfflineAccess: true,
-    });
-
-    // refresh에 5초 타임아웃 적용
-    const googleUser = await Promise.race([
-      GoogleAuth.refresh(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-    ]);
-    const idToken = googleUser?.authentication?.idToken ?? googleUser?.idToken;
-    if (!idToken) return;
-
-    const rawResp = await fetch('https://jbvkygeksohlysyvaoab.supabase.co/auth/v1/token?grant_type=id_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
-      body: JSON.stringify({ provider: 'google', id_token: idToken }),
-    });
-    if (!rawResp.ok) return;
-    const rawJson = await rawResp.json();
-
-    const session = saveSessionToStorage(rawJson);
-    if (session.user) {
-      _authReady = true;
-      renderAuthUI(session.user);
-      // 플랜/RevenueCat 동기화는 백그라운드에서
-      if (window._RC) window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-      fetchPlanWithToken(session.access_token).catch(() => {});
-    }
-  } catch(e) {
-    console.log('[Auth] 자동 로그인 불가:', e?.message || e);
-  } finally {
-    _authResolve();
-    _showOnboardingButtons();
-  }
+  // 2) 저장된 세션 없음 → Google 로그인 버튼 표시
+  // (GoogleAuth.refresh() 선제 호출 제거 — signIn()과 충돌하여 "Something went wrong" 유발)
+  _authResolve();
+  _showOnboardingButtons();
 }
 
 function _showOnboardingButtons() {
@@ -1441,6 +1428,17 @@ function handleStart() {
   showTutorialIfNeeded();
 }
 
+// 다른 계정으로 변경 → 로그아웃 후 Google 로그인 버튼 표시
+function onboardingSwitchAccount() {
+  localStorage.removeItem(SUPABASE_STORAGE_KEY);
+  setPlan('free');
+  renderAuthUI(null);
+  _authReady = false;
+  document.getElementById('onboarding-start-btn')?.classList.add('hidden');
+  document.getElementById('onboarding-switch-btn')?.classList.add('hidden');
+  document.getElementById('onboarding-google-btn')?.classList.remove('hidden');
+}
+
 async function onboardingSignIn() {
   // 웹: Supabase OAuth 리다이렉트 방식 (네이티브 플러그인 없음)
   if (!window.Capacitor?.isNativePlatform()) {
@@ -1453,9 +1451,15 @@ async function onboardingSignIn() {
   }
 
   // 네이티브(Android): GoogleAuth 플러그인 방식
+  const signinLoader = document.getElementById('onboarding-signin-loading');
+  const googleBtn    = document.getElementById('onboarding-google-btn');
   try {
     const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
     if (!GoogleAuth) return;
+
+    // 로그인 중 스피너 표시
+    if (googleBtn)    googleBtn.classList.add('hidden');
+    if (signinLoader) signinLoader.classList.remove('hidden');
 
     await GoogleAuth.initialize({
       clientId: '495859421223-rkjalna3ckhslfrk12gvbehn69o9j4qe.apps.googleusercontent.com',
@@ -1474,7 +1478,6 @@ async function onboardingSignIn() {
     });
     const rawJson = await rawResp.json();
     if (!rawResp.ok) throw new Error(rawJson?.error_description || 'Supabase 인증 실패');
-
     const session = saveSessionToStorage(rawJson);
     if (session.user) {
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
@@ -1484,24 +1487,29 @@ async function onboardingSignIn() {
       showTutorialIfNeeded();
     }
   } catch(e) {
-    const msg = e?.message || '';
-    if (!msg.includes('cancel')) console.error('[Auth] 온보딩 로그인 실패:', e);
+    const msg = e?.message || String(e) || '';
+    if (!msg.toLowerCase().includes('cancel')) {
+      console.error('[Auth] 온보딩 로그인 실패:', e);
+    }
+    // 실패 시 스피너 숨기고 버튼 복원
+    if (signinLoader) signinLoader.classList.add('hidden');
+    if (googleBtn)    googleBtn.classList.remove('hidden');
   }
 }
 
 // ── 튜토리얼 모달 ──
-const TUTORIAL_KEY = 'chorditor_tutorial_v1';
+// 세션(앱 실행) 단위로 관리 — 앱 재시작마다 초기화되어 매번 노출
+let _tutorialShownThisSession = false;
 
 function showTutorialIfNeeded() {
+  if (_tutorialShownThisSession) return;
   setTimeout(() => {
-    if (!localStorage.getItem(TUTORIAL_KEY)) {
-      document.getElementById('modal-tutorial').classList.remove('hidden');
-    }
+    _tutorialShownThisSession = true;
+    document.getElementById('modal-tutorial').classList.remove('hidden');
   }, 500);
 }
 
 function closeTutorial() {
-  localStorage.setItem(TUTORIAL_KEY, '1');
   const el = document.getElementById('modal-tutorial');
   el.classList.add('closing');
   el.addEventListener('animationend', () => {
@@ -1580,21 +1588,25 @@ const ENTITLEMENT_STANDARD = 'standard_entitlement';
 const ENTITLEMENT_PRO      = 'pro_entitlement';
 
 // Google Play 구독 상품 식별자 (RevenueCat Offering 내 Package identifier)
-const PRODUCT_STANDARD = 'standard_monthly';
+// standard는 RevenueCat 대시보드 실제 identifier인 $rc_monthly 사용
+const PRODUCT_STANDARD = '$rc_monthly';
 const PRODUCT_PRO      = 'pro_monthly';
+
+// RC 초기화 완료를 알리는 Promise — tryAutoSignIn에서 await 후 syncPlanFromBilling 호출
+let _billingReady = Promise.resolve();
 
 async function initBilling() {
   if (!window.Capacitor?.isNativePlatform()) return;
-  try {
-    // 번들러 없는 환경 → Capacitor 플러그인 브리지로 접근
+  // _billingReady: RC configure 완료 시점을 외부에서 await 할 수 있도록 노출
+  // syncPlanFromBilling은 tryAutoSignIn에서 순서 보장 후 호출
+  _billingReady = (async () => {
     const Purchases = window.Capacitor?.Plugins?.Purchases;
     if (!Purchases) { console.warn('[Billing] Purchases 플러그인 없음'); return; }
     window._RC = Purchases;
     await Purchases.configure({ apiKey: REVENUECAT_ANDROID_KEY });
-    await syncPlanFromBilling();
-  } catch(e) {
-    console.warn('[Billing] initBilling 실패:', e);
-  }
+  })();
+  try { await _billingReady; }
+  catch(e) { console.warn('[Billing] initBilling 실패:', e); }
 }
 
 async function syncPlanFromBilling() {
@@ -1602,32 +1614,82 @@ async function syncPlanFromBilling() {
   try {
     const { customerInfo } = await window._RC.getCustomerInfo();
     const active = customerInfo?.entitlements?.active || {};
-    if (active[ENTITLEMENT_PRO])           setPlan('pro');
-    else if (active[ENTITLEMENT_STANDARD]) setPlan('standard');
-    else                                   setPlan('free');
+    let newPlan;
+    if (active[ENTITLEMENT_PRO])           newPlan = 'pro';
+    else if (active[ENTITLEMENT_STANDARD]) newPlan = 'standard';
+    else return; // free는 Supabase 기준 유지 (관리자 지정 플랜 보호)
+    setPlan(newPlan);
+    // RevenueCat 유료 플랜 → Supabase 미리 업데이트
+    // (이후 fetchWebPlan()이 덮어쓰는 것 방지)
+    await updateSupabasePlan(newPlan);
   } catch(e) {
     console.warn('[Billing] syncPlanFromBilling 실패:', e);
   }
 }
 
-function showSubscriptionNoticeModal() {
-  const el = document.getElementById('modal-subscription-notice');
-  el.classList.remove('hidden', 'closing');
+// 결제 완료 후 Supabase DB 플랜 동기화 (Supabase에 set_my_plan RPC 필요)
+async function updateSupabasePlan(plan) {
+  try {
+    const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+    if (!stored) return;
+    const session = JSON.parse(stored);
+    if (!session.access_token) return;
+    const resp = await fetch(SUPABASE_URL + '/rest/v1/rpc/set_my_plan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({ new_plan: plan }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      console.error('[Billing] updateSupabasePlan RPC 실패:', resp.status, text);
+    }
+  } catch(e) {
+    console.error('[Billing] updateSupabasePlan 네트워크 오류:', e);
+  }
 }
-function closeSubscriptionNoticeModal() {
-  const el = document.getElementById('modal-subscription-notice');
-  el.classList.add('closing');
-  el.addEventListener('animationend', () => {
-    el.classList.add('hidden');
-    el.classList.remove('closing');
-  }, { once: true });
+
+// 결제 전 계정 확인 모달 — resolve(true): 결제 진행 / resolve(false): 취소
+let _purchaseConfirmResolve = null;
+function showPurchaseConfirm() {
+  return new Promise(resolve => {
+    _purchaseConfirmResolve = resolve;
+    try {
+      const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
+      const email = stored ? (JSON.parse(stored)?.user?.email ?? '') : '';
+      const emailEl = document.getElementById('purchase-confirm-email');
+      if (emailEl) emailEl.textContent = email || '(이메일 없음)';
+    } catch(e) {}
+    document.getElementById('purchase-confirm-modal')?.classList.remove('hidden');
+    lucide.createIcons();
+  });
+}
+function closePurchaseConfirm(confirmed) {
+  document.getElementById('purchase-confirm-modal')?.classList.add('hidden');
+  if (_purchaseConfirmResolve) { _purchaseConfirmResolve(!!confirmed); _purchaseConfirmResolve = null; }
+}
+
+// 결제 FAQ 모달
+function openBillingFaq() {
+  document.getElementById('billing-faq-modal')?.classList.remove('hidden');
+  lucide.createIcons();
+}
+function closeBillingFaq() {
+  document.getElementById('billing-faq-modal')?.classList.add('hidden');
 }
 
 async function purchasePlan(planId) {
   if (!window._RC) {
-    showSubscriptionNoticeModal();
+    alert('결제 초기화 중입니다. 잠시 후 다시 시도해주세요.');
     return;
   }
+
+  // 결제 전 계정 확인 모달
+  const confirmed = await showPurchaseConfirm();
+  if (!confirmed) return;
 
   // RevenueCat App User ID = 저장된 Supabase user UUID
   try {
@@ -1640,24 +1702,54 @@ async function purchasePlan(planId) {
 
   const productId = planId === 'pro' ? PRODUCT_PRO : PRODUCT_STANDARD;
   try {
-    const { offerings } = await window._RC.getOfferings();
-    const current = offerings?.current;
-    if (!current) throw new Error('Offering 없음');
+    const offeringsResult = await window._RC.getOfferings();
+    // 응답 구조 확인: { offerings: { current, all } } 또는 { current, all } 두 형태 대응
+    const offerings = offeringsResult?.offerings ?? offeringsResult;
+    const current = offerings?.current ?? null;
+    if (!current) {
+      console.error('[Billing] Offering 없음. raw:', JSON.stringify(offeringsResult).slice(0, 400));
+      throw new Error('상품 정보를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.');
+    }
 
     const pkg = current.availablePackages.find(p =>
       p.identifier === productId || p.product?.identifier?.includes(productId)
     );
     if (!pkg) throw new Error('상품을 찾을 수 없습니다: ' + productId);
 
-    await window._RC.purchasePackage({ aPackage: pkg });
-    await syncPlanFromBilling();
-    await fetchWebPlan();
+    // 업그레이드 시 현재 활성 구독 product ID를 oldSKU로 전달
+    const purchaseParams = { aPackage: pkg };
+    try {
+      const { customerInfo: currentInfo } = await window._RC.getCustomerInfo();
+      const activeSubs = currentInfo?.activeSubscriptions || [];
+      if (activeSubs.length > 0) {
+        purchaseParams.upgradeInfo = {
+          oldSKU: activeSubs[0],
+          prorationMode: 1, // IMMEDIATE_WITH_TIME_PRORATION: 차액 즉시 결제
+        };
+      }
+    } catch(e) { /* upgradeInfo 없이 진행 */ }
+
+    const { customerInfo } = await window._RC.purchasePackage(purchaseParams);
+
+    // purchasePackage 반환값으로 즉시 플랜 적용
+    // (fetchWebPlan 금지: Supabase DB는 아직 free → 덮어쓰기 방지)
+    // Sandbox에서 entitlement 반영 지연 대비: entitlements가 비어있으면 planId를 폴백으로 사용
+    const active = customerInfo?.entitlements?.active || {};
+    const newPlan = active[ENTITLEMENT_PRO] ? 'pro'
+                  : active[ENTITLEMENT_STANDARD] ? 'standard'
+                  : planId; // 구매한 플랜 ID 직접 사용 (entitlement 지연 대응)
+    setPlan(newPlan);
+
+    // Supabase DB에도 플랜 반영
+    await updateSupabasePlan(newPlan);
+
     closePlanModal();
-    alert('구독이 완료되었습니다!');
   } catch(e) {
-    if (e?.code !== 'PURCHASE_CANCELLED') {
+    const msg = (e?.message || e?.code || '').toLowerCase();
+    const isCancelled = msg.includes('cancel');
+    if (!isCancelled) {
       console.error('[Billing] purchasePlan 실패:', e);
-      showSubscriptionNoticeModal();
+      alert(e?.message || '결제 중 오류가 발생했습니다. 다시 시도해주세요.');
     }
   }
 }
@@ -1669,9 +1761,9 @@ async function restorePurchases() {
   }
   try {
     await window._RC.restorePurchases();
+    // syncPlanFromBilling 내부에서 RC 유료 플랜 → updateSupabasePlan()까지 처리
+    // fetchWebPlan 호출 금지: RC 결과를 Supabase free로 덮어쓸 수 있음
     await syncPlanFromBilling();
-    // Supabase DB 플랜을 마지막에 적용 (DB에 직접 설정된 플랜이 최종 우선)
-    await fetchWebPlan();
     alert('구매 내역을 복원했습니다.');
   } catch(e) {
     console.error('[Billing] restorePurchases 실패:', e);
@@ -1718,9 +1810,11 @@ function openPlanModal() {
     }
   });
 
-  // 구매 복원 버튼: Android에서만 표시
+  // 구매 복원 / 결제 도움말 버튼: Android에서만 표시
   const restoreBtn = document.getElementById('plan-restore-btn');
   if (restoreBtn) restoreBtn.style.display = isNative ? '' : 'none';
+  const faqBtn = document.getElementById('plan-faq-btn');
+  if (faqBtn) faqBtn.style.display = isNative ? '' : 'none';
 
   document.getElementById('plan-modal-overlay').classList.remove('hidden');
   lucide.createIcons();
@@ -1981,7 +2075,8 @@ function reorderPinned(dragId, targetId) {
 // ═══════════════════════════════════════════════════════════════
 // 프로젝트 생성
 // ═══════════════════════════════════════════════════════════════
-function promptCreateProject() {
+async function promptCreateProject() {
+  await refreshPlanFromDB();
   if (!canCreateProject()) {
     showUpgradeModal('project_limit');
     return;
@@ -4497,8 +4592,9 @@ window._handleShareImport = async function(rawCode) {
   // export-scale 선택 시 플랜 체크 (disabled가 무시되는 환경 대비)
   const exportScaleEl = document.getElementById('export-scale');
   if (exportScaleEl) {
-    exportScaleEl.addEventListener('change', () => {
+    exportScaleEl.addEventListener('change', async () => {
       const scale = parseFloat(exportScaleEl.value);
+      await refreshPlanFromDB();
       if (!canUseScale(scale)) {
         exportScaleEl.value = '1'; // 선택 되돌리기
         showUpgradeModal('scale_limit');
