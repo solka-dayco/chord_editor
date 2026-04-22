@@ -68,6 +68,16 @@ capacitor-cordova-android-plugins/
 Thumbs.db
 
 # ========================
+# Claude Code
+# ========================
+.claude/worktrees/
+
+# ========================
+# Supabase
+# ========================
+supabase/.temp/
+
+# ========================
 # 기타
 # ========================
 proguard/
