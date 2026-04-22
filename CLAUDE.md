@@ -29,6 +29,48 @@ Chords_editor/
 
 ---
 
+## GitHub Pages 설정 (web 브랜치)
+
+### 기본 설정
+- **저장소:** `https://github.com/solka-dayco/chord_editor`
+- **배포 URL:** `https://solka-dayco.github.io/chord_editor/`
+- **배포 브랜치:** `web` (root)
+- **설정 경로:** GitHub → Settings → Pages → Branch: `web` / `/ (root)`
+
+### ⚠️ 필수 파일: `.nojekyll`
+`web` 브랜치 루트에 `.nojekyll` 파일이 반드시 있어야 함.  
+없으면 GitHub Pages가 Jekyll로 빌드 시도 → 실패.
+
+### ⚠️ .claude/worktrees 서브모듈 오류
+Claude Code가 생성하는 `.claude/worktrees/` 폴더가 git에 `160000 commit` (서브모듈)으로 잘못 등록될 수 있음.
+
+**증상:** GitHub Actions 빌드 실패
+```
+No url found for submodule path '.claude/worktrees/focused-cori' in .gitmodules
+```
+
+**해결:**
+```bash
+git rm --cached .claude/worktrees/focused-cori
+git rm --cached .claude/worktrees/goofy-jennings
+# .gitignore에 .claude/worktrees/ 추가 후 커밋
+```
+
+**예방:** `.gitignore`에 `.claude/worktrees/` 등록되어 있음 (이미 적용됨)
+
+### 배포 확인 방법
+GitHub → Actions 탭 → "pages build and deployment" 워크플로우 상태 확인
+- ✅ 초록: 배포 완료 → `Ctrl+Shift+R` 로 강제 새로고침
+- ❌ 빨간: 빌드 오류 → 워크플로우 클릭 → Annotations에서 원인 확인
+
+### Supabase Redirect URL 등록 필수
+웹 Google 로그인이 동작하려면 Supabase에 도메인 등록 필요:
+- **Supabase → Authentication → URL Configuration**
+- Site URL: `https://solka-dayco.github.io/chord_editor/`
+- Redirect URLs: `https://solka-dayco.github.io/chord_editor/` 추가
+
+---
+
 ## 웹 버전 커밋 규칙 (필수)
 
 **`git push origin main` 실행 전 반드시 아래 절차를 따를 것:**
