@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 보이싱 라이브러리
  * ─────────────────────────────────────────────
  * 줄 순서: 6번줄(저음 E) → 1번줄(고음 e)
@@ -6,8 +6,8 @@
  *
  * [헬퍼] fn(줄인덱스, 프렛, flat?)
  *   줄인덱스: 0=6번(E) 1=5번(A) 2=4번(D) 3=3번(G) 4=2번(B) 5=1번(e)
- *   예) fn(1, 4) → 'C#'   (5번줄 4프렛 = C#)
- *       fn(3, 2) → 'A'    (3번줄 2프렛 = A)
+ *   예) fn(1, 4, flat) → 'C#'   (5번줄 4프렛 = C#)
+ *       fn(3, 2, flat) → 'A'    (3번줄 2프렛 = A)
  */
 (function () {
   const _PCS = [4, 9, 2, 7, 11, 4];
@@ -69,27 +69,27 @@
     { //Major
       pattern: ['r', 'r+2', 'r+2', 'r+1', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r),
+      name: (r, flat) => fn(0, r, flat),
     },
     { //minor
       pattern: ['r', 'r+2', 'r+2', 'r', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm',
+      name: (r, flat) => fn(0, r, flat) + 'm',
     },
     { //minor7
       pattern: ['r', 'r+2', 'r+2', 'r', 'r+3', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7',
+      name: (r, flat) => fn(0, r, flat) + 'm7',
     },
     { //sus4
       pattern: ['r', 'r+2', 'r+2', 'r+2', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'sus4',
+      name: (r, flat) => fn(0, r, flat) + 'sus4',
     },
     { //7sus4
       pattern: ['r', 'r+2', 'r', 'r+2', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + '7' + 'sus4',
+      name: (r, flat) => fn(0, r, flat) + '7' + 'sus4',
     },
 
 
@@ -97,60 +97,60 @@
     {
       pattern: ['x', 'r', 'r+2', 'r+2', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r),
+      name: (r, flat) => fn(1, r, flat),
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+2', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm',
+      name: (r, flat) => fn(1, r, flat) + 'm',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+3', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'aug',
+      name: (r, flat) => fn(1, r, flat) + 'aug',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+2', 'r+3', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'sus4',
+      name: (r, flat) => fn(1, r, flat) + 'sus4',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r', 'r+3', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7' + 'sus4',
+      name: (r, flat) => fn(1, r, flat) + '7' + 'sus4',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+2', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'add9',
+      name: (r, flat) => fn(1, r, flat) + 'add9',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+1', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7' + '(9)',
+      name: (r, flat) => fn(1, r, flat) + 'M7' + '(9)',
     },
     // ── D형 코드 (4번줄 루트) ─────────────────
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r+3', 'r'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'add9',
+      name: (r, flat) => fn(2, r, flat) + 'add9',
     },
 
     //분수 코드 & 하이브리드 코드
     { //도미넌트 텐션 7sus4(9) 6번줄 루트
       pattern: ['r', 'x', 'r', 'r-1', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r) + '/' + fn(0, r) ,
+      name: (r, flat) => fn(2, r, flat) + '/' + fn(0, r, flat) ,
     },
     { //도미넌트 텐션 7sus4(9) 5번줄 루트
       pattern: ['x', 'r', 'r', 'r', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r) + '/' + fn(1, r) ,
+      name: (r, flat) => fn(3, r, flat) + '/' + fn(1, r, flat) ,
     },
     { //도미넌트 텐션 7sus4(9) 4번줄 루트
       pattern: ['x', 'x', 'r', 'r+2', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(4, r+1) + '/' + fn(2, r) ,
+      name: (r, flat) => fn(4, r+1, flat) + '/' + fn(2, r, flat) ,
     },
 
     // Drop2 보이싱
@@ -158,112 +158,112 @@
     {
       pattern: ['x', 'r', 'r+2', 'r+1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7',
+      name: (r, flat) => fn(1, r, flat) + 'M7',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r+1', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7',
+      name: (r, flat) => fn(1, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'r-2', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-2, flat) + 'M7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'r-1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + 'M7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'r-2', 'r-1', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(4, r-1, flat) + 'M7/' + fn(1, r, flat),
     },
     // Dom.7
     {
       pattern: ['x', 'r', 'r+2', 'r', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7',
+      name: (r, flat) => fn(1, r, flat) + '7',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7',
+      name: (r, flat) => fn(1, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+1', 'r-2', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + '7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-2, flat) + '7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'r-1', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + '7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r+1', 'r-1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + '7/' + fn(1, r, flat),
     },
     // minor 7
     {
       pattern: ['x', 'r', 'r+2', 'r', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7',
+      name: (r, flat) => fn(1, r, flat) + 'm7',
     },
     {
       pattern: ['x', 'r', 'r+2', 'r', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7',
+      name: (r, flat) => fn(1, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'r-1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'r-2', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + 'm7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'r-1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7/' + fn(1, r, flat),
     },
     // half-diminished
     {
       pattern: ['x', 'r', 'r+1', 'r', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7(b5)',
+      name: (r, flat) => fn(1, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'r-1', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r+1', 'r-1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r+1) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(2, r+1, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'r-2', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
 
     // ── D형 코드 (4번줄 루트) ─────────────────
@@ -271,97 +271,97 @@
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r+2', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'M7',
+      name: (r, flat) => fn(2, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r-1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + 'M7/' + fn(2, r),
+      name: (r, flat) => fn(4, r-1, flat) + 'M7/' + fn(2, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(3, r) + 'M7/' + fn(2, r),
+      name: (r, flat) => fn(3, r, flat) + 'M7/' + fn(2, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r-1', 'r-1'],
       rRange: [0, 20],
-      name: r => fn(5, r-1) + 'M7/' + fn(2, r),
+      name: (r, flat) => fn(5, r-1, flat) + 'M7/' + fn(2, r, flat),
     },
     // Dom.7
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r+1', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(2, r) + '7',
+      name: (r, flat) => fn(2, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['x', 'x', 'r', 'r+1', 'r-1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + '7/' + fn(2, r),
+      name: (r, flat) => fn(4, r-1, flat) + '7/' + fn(2, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(3, r) + '7/' + fn(2, r),
+      name: (r, flat) => fn(3, r, flat) + '7/' + fn(2, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'x', 'r', 'r+1', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(5, r) + '7/' + fn(2, r),
+      name: (r, flat) => fn(5, r, flat) + '7/' + fn(2, r, flat),
     },
     // minor 7
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r+1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'm7',
+      name: (r, flat) => fn(2, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7/' + fn(2, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7/' + fn(2, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r-1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(3, r) + 'm7/' + fn(2, r),
+      name: (r, flat) => fn(3, r, flat) + 'm7/' + fn(2, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(5, r) + 'm7/' + fn(2, r),
+      name: (r, flat) => fn(5, r, flat) + 'm7/' + fn(2, r, flat),
     },
     // half-diminished
     {
       pattern: ['x', 'x', 'r', 'r+1', 'r+1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'm7(b5)',
+      name: (r, flat) => fn(2, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['x', 'x', 'r', 'r+2', 'r', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7(b5)/' + fn(2, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7(b5)/' + fn(2, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'x', 'r', 'r+1', 'r', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(3, r+1) + 'm7(b5)/' + fn(2, r),
+      name: (r, flat) => fn(3, r+1, flat) + 'm7(b5)/' + fn(2, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'x', 'r', 'r', 'r-1', 'r'],
       rRange: [0, 20],
-      name: r => fn(5, r) + 'm7(b5)/' + fn(2, r),
+      name: (r, flat) => fn(5, r, flat) + 'm7(b5)/' + fn(2, r, flat),
     },
 
 
@@ -370,224 +370,224 @@
     {
       pattern: ['r', 'x', 'r+1', 'r+1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'M7',
+      name: (r, flat) => fn(0, r, flat) + 'M7',
     },
     {
       pattern: ['r', 'r+2', 'r+1', 'r+1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'M7',
+      name: (r, flat) => fn(0, r, flat) + 'M7',
     },
     {
       pattern: ['r', 'r+2', 'r+1', 'r+1', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'M7',
+      name: (r, flat) => fn(0, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['r', 'x', 'r-2', 'r', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r-2) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(2, r-2, flat) + 'M7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'x', 'r-1', 'r+1', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r-2) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(4, r-2, flat) + 'M7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'x', 'r-2', 'r-2', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-2, flat) + 'M7/' + fn(0, r, flat),
     },
     // dom.7
     {
       pattern: ['r', 'x', 'r', 'r+1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + '7',
+      name: (r, flat) => fn(0, r, flat) + '7',
     },
     {
       pattern: ['r', 'r+2', 'r', 'r+1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + '7',
+      name: (r, flat) => fn(0, r, flat) + '7',
     },
     {
       pattern: ['r', 'r+2', 'r', 'r+1', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + '7',
+      name: (r, flat) => fn(0, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['r', 'x', 'r-2', 'r', 'r-1', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r-2) + '7/' + fn(0, r),
+      name: (r, flat) => fn(2, r-2, flat) + '7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'x', 'r-1', 'r', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r-2) + '7/' + fn(0, r),
+      name: (r, flat) => fn(4, r-2, flat) + '7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'x', 'r-1', 'r-1', 'r-1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + '7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + '7/' + fn(0, r, flat),
     },
     // minor7
     {
       pattern: ['r', 'x', 'r', 'r', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7',
+      name: (r, flat) => fn(0, r, flat) + 'm7',
     },
     {
       pattern: ['r', 'r+2', 'r', 'r', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7',
+      name: (r, flat) => fn(0, r, flat) + 'm7',
     },
     {
       pattern: ['r', 'r+2', 'r', 'r', 'r', 'r'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7',
+      name: (r, flat) => fn(0, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['r', 'x', 'r-1', 'r+1', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r-1) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(2, r-1, flat) + 'm7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'x', 'r-2', 'r', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r-2) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(4, r-2, flat) + 'm7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'x', 'r-1', 'r-1', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7/' + fn(0, r, flat),
     },
     // half-diminished
     {
       pattern: ['r', 'x', 'r', 'r', 'r-1', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7(b5)',
+      name: (r, flat) => fn(0, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['r', 'x', 'r-1', 'r', 'r', 'x'],
       rRange: [0, 20],
-      name: r => fn(2, r-1) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(2, r-1, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'x', 'r-1', 'r+1', 'r-1', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(4, r-1, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'x', 'r-2', 'r-1', 'r-2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     // Drop3 보이싱 A형 코드
     // M7
     {
       pattern: ['x', 'r', 'x', 'r+1', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7',
+      name: (r, flat) => fn(1, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'x', 'r-2', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-2, flat) + 'M7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r+2', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(5, r-2) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(5, r-2, flat) + 'M7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'x', 'r-2', 'r-1', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(4, r-1, flat) + 'M7/' + fn(1, r, flat),
     },
     // Dom.7
     {
       pattern: ['x', 'r', 'x', 'r', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7',
+      name: (r, flat) => fn(1, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'x', 'r-2', 'r+1', 'r-1'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + '7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-2, flat) + '7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r+1', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(2, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + '7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r', 'r-1'],
       rRange: [0, 20],
-      name: r => fn(4, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + '7/' + fn(1, r, flat),
     },
     // minor 7
     {
       pattern: ['x', 'r', 'x', 'r', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7',
+      name: (r, flat) => fn(1, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r+2', 'r'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'x', 'r-2', 'r+1', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(5, r-2) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(5, r-2, flat) + 'm7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7/' + fn(1, r, flat),
     },
     // half-diminished
     {
       pattern: ['x', 'r', 'x', 'r', 'r+1', 'r-1'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7(b5)',
+      name: (r, flat) => fn(1, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r+1', 'r'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'x', 'r-1', 'r+2', 'r-1'],
       rRange: [0, 20],
-      name: r => fn(5, r-1) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(5, r-1, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'x', 'r-2', 'r', 'r-2'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
 
 
@@ -596,194 +596,194 @@
     {
       pattern: ['r', 'r+2', 'x', 'r+1', 'r+4', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'M7',
+      name: (r, flat) => fn(0, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['r', 'r+2', 'x', 'r', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r+1) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(4, r+1, flat) + 'M7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'r', 'x', 'r+1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(1, r, flat) + 'M7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'r', 'x', 'r-2', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-2) + 'M7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-2, flat) + 'M7/' + fn(0, r, flat),
     },
     // Dom.7
     {
       pattern: ['r', 'r+2', 'x', 'r+1', 'r+3', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + '7',
+      name: (r, flat) => fn(0, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['r', 'r+1', 'x', 'r', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r+1) + '7/' + fn(0, r),
+      name: (r, flat) => fn(4, r+1, flat) + '7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'r', 'x', 'r', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7/' + fn(0, r),
+      name: (r, flat) => fn(1, r, flat) + '7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'r+1', 'x', 'r-1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + '7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + '7/' + fn(0, r, flat),
     },
     // minor 7
     {
       pattern: ['r', 'r+2', 'x', 'r', 'r+3', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r, accidental === 'flat') + 'm7',
+      name: (r, flat) => fn(0, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['r', 'r+2', 'x', 'r+1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r+2) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(4, r+2, flat) + 'm7/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'r', 'x', 'r', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(1, r, flat) + 'm7/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'r', 'x', 'r-1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7/' + fn(0, r, flat),
     },
     // Half-diminished
     {
       pattern: ['r', 'r+1', 'x', 'r', 'r+3', 'x'],
       rRange: [0, 20],
-      name: r => fn(0, r) + 'm7(b5)',
+      name: (r, flat) => fn(0, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['r', 'r+2', 'x', 'r', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(4, r+2) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(4, r+2, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     // 2전위
     {
       pattern: ['r', 'r+1', 'x', 'r+1', 'r+2', 'x'],
       rRange: [0, 20],
-      name: r => fn(1, r+1) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(1, r+1, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     // 3전위
     {
       pattern: ['r', 'r', 'x', 'r-1', 'r+1', 'x'],
       rRange: [0, 20],
-      name: r => fn(3, r-1) + 'm7(b5)/' + fn(0, r),
+      name: (r, flat) => fn(3, r-1, flat) + 'm7(b5)/' + fn(0, r, flat),
     },
     //5번줄 A형코드
     // M7
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+2', 'r+4'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'M7',
+      name: (r, flat) => fn(1, r, flat) + 'M7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(5, r+1) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(5, r+1, flat) + 'M7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r+2', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + 'M7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r-1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(4, r-1) + 'M7/' + fn(1, r),
+      name: (r, flat) => fn(4, r-1, flat) + 'M7/' + fn(1, r, flat),
     },
     // Dom.7
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+2', 'r+3'],
       rRange: [0, 20],
-      name: r => fn(1, r) + '7',
+      name: (r, flat) => fn(1, r, flat) + '7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+1', 'x', 'r+1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(5, r+1) + '7/' + fn(1, r),
+      name: (r, flat) => fn(5, r+1, flat) + '7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r+1', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(2, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + '7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r+1', 'x', 'r', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(4, r) + '7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + '7/' + fn(1, r, flat),
     },
     // minor7
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+1', 'r+3'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7',
+      name: (r, flat) => fn(1, r, flat) + 'm7',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+2', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(5, r+2) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(5, r+2, flat) + 'm7/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r+1', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(2, r) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(2, r, flat) + 'm7/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7/' + fn(1, r, flat),
     },
     // Half-diminished
     {
       pattern: ['x', 'r', 'r+1', 'x', 'r+1', 'r+3'],
       rRange: [0, 20],
-      name: r => fn(1, r) + 'm7(b5)',
+      name: (r, flat) => fn(1, r, flat) + 'm7(b5)',
     },
     // 1전위
     {
       pattern: ['x', 'r', 'r+2', 'x', 'r+1', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(5, r+2) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(5, r+2, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 2전위
     {
       pattern: ['x', 'r', 'r+1', 'x', 'r+2', 'r+2'],
       rRange: [0, 20],
-      name: r => fn(2, r+1) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(2, r+1, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
     // 3전위
     {
       pattern: ['x', 'r', 'r', 'x', 'r', 'r+1'],
       rRange: [0, 20],
-      name: r => fn(4, r) + 'm7(b5)/' + fn(1, r),
+      name: (r, flat) => fn(4, r, flat) + 'm7(b5)/' + fn(1, r, flat),
     },
 
 
@@ -793,7 +793,7 @@
     {
       pattern: ['x', 'r', 'r-2', 'r-2', 'r-2', 'x'],
       rRange: [2, 12],
-      name: r => `${fn(3, r - 2)}/${fn(1, r)}`,
+      name: (r, flat) => `${fn(3, r - 2, flat)}/${fn(1, r, flat)}`,
     },
 
     // ── E형 코드 (6번줄 루트) ─────────────────
@@ -802,7 +802,7 @@
     {
       pattern: ['r', 'r+2', 'r+2', 'r+1', 'r', 'r'],
       rRange: [0, 12],
-      name: r => fn(0, r),
+      name: (r, flat) => fn(0, r, flat),
     },
 
     // 여기에 추가 ↓
@@ -828,7 +828,7 @@
     for (let r = rRange[0]; r <= rRange[1]; r++) {
       const frets = evalPat(pattern, r);
       if (frets.some(f => f !== null && f < 0)) continue;
-      chordSuggester.addVoicing(frets, [name(r)]);
+      chordSuggester.addVoicing(frets, [name(r, false)], [name(r, true)]);
     }
   });
 

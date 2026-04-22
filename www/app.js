@@ -95,9 +95,18 @@ class GuitarChordSuggester {
     this.voicingLibrary = new Map();
   }
 
-  addVoicing(input, names) {
+  static _sharpToFlat(name) {
+    const map = { 'C#':'Db', 'D#':'Eb', 'F#':'Gb', 'G#':'Ab', 'A#':'Bb' };
+    return name.replace(/[A-G]#/g, m => map[m] || m);
+  }
+
+  addVoicing(input, names, flatNames = null) {
     const key = this._key(this._parse(input));
-    this.voicingLibrary.set(key, Array.isArray(names) ? names : [names]);
+    const sharp = Array.isArray(names) ? names : [names];
+    const flat = flatNames
+      ? (Array.isArray(flatNames) ? flatNames : [flatNames])
+      : sharp.map(n => GuitarChordSuggester._sharpToFlat(n));
+    this.voicingLibrary.set(key, { sharp, flat });
   }
 
   suggest(input, opts = {}) {
@@ -106,7 +115,10 @@ class GuitarChordSuggester {
     if (!anal.sounding.length) return ['검색 안됨'];
 
     const exact = this.voicingLibrary.get(anal.voicingKey);
-    if (exact?.length) return [exact[0]];
+    if (exact?.sharp?.length) {
+      const names = this.options.spellingMode === 'flat' ? exact.flat : exact.sharp;
+      return [names[0]];
+    }
 
     const candidates = [];
     for (let root = 0; root < 12; root++) {
@@ -1347,6 +1359,11 @@ let _authResolve = null;
 const _authPromise = new Promise(resolve => { _authResolve = resolve; });
 
 async function tryAutoSignIn() {
+  // ── DEV ONLY: 온보딩 건너뜀 (USB 디버깅 환경에서 Google 로그인 불가) ──
+  // main 병합 시 아래 3줄 제거
+  hideOnboarding(); _authReady = true; _authResolve(); return;
+  // ── /DEV ──
+
   if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
 
   // 1) 저장된 세션이 유효하면 온보딩 건너뜀 → 바로 메인으로

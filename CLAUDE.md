@@ -142,6 +142,29 @@ cp style.css  www/style.css  && cp style.css  android/app/src/main/assets/public
 
 ---
 
+## dev 브랜치 규칙
+
+### dev 브랜치 생성 원칙
+- **dev는 항상 최신 main에서 분기**하여 생성한다.
+- 기존 dev가 있어도 새 작업 시작 전 `git checkout dev && git reset --hard main`으로 최신화한다.
+
+### USB 디버깅 (dev 전용) — 온보딩 건너뜀
+
+Android USB 연결 환경에서는 Google 로그인이 불가하므로 `dev` 브랜치에서는 온보딩을 건너뛴다.
+
+**위치:** `app.js` → `tryAutoSignIn()` 함수 상단
+
+```js
+// ── DEV ONLY: 온보딩 건너뜀 (USB 디버깅 환경에서 Google 로그인 불가) ──
+// main 병합 시 아래 3줄 제거
+hideOnboarding(); _authReady = true; _authResolve(); return;
+// ── /DEV ──
+```
+
+⚠️ **주의:** `dev → main` (또는 `staging`) 병합/커밋 시 반드시 위 3줄을 제거해야 한다.
+
+---
+
 ## Android 빌드 설정
 
 `android/variables.gradle`:
