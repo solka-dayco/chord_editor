@@ -1404,11 +1404,16 @@ function showSaveToast() {
 
 async function initAppVersion() {
   try {
-    const App = window.Capacitor?.Plugins?.App;
-    if (!App) return; // 웹 환경에서는 표시 안 함
-    const { version } = await App.getInfo();
     const el = document.getElementById('app-version');
-    if (el && version) el.textContent = 'v' + version;
+    if (!el) return;
+    const App = window.Capacitor?.Plugins?.App;
+    if (App) {
+      const { version } = await App.getInfo();
+      if (version) el.textContent = 'v' + version;
+    } else {
+      // 웹: 모바일 버전과 동기화 필요 (CLAUDE.md 웹 커밋 규칙 참고)
+      el.textContent = 'v1.0.1';
+    }
   } catch(e) { /* 무시 */ }
 }
 

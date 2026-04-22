@@ -29,6 +29,21 @@ Chords_editor/
 
 ---
 
+## 웹 버전 커밋 규칙 (필수)
+
+**`git push origin main` 실행 전 반드시 아래 절차를 따를 것:**
+
+1. 사용자에게 현재 모바일 버전(versionName)을 확인하도록 요청
+2. 사용자가 버전을 직접 알려주면, `app.js`의 `initAppVersion()` 웹 분기 하드코딩 값을 해당 버전으로 업데이트
+3. 그 후 동기화 → 커밋 → push 진행
+
+```js
+// app.js initAppVersion() 웹 분기
+el.textContent = 'v1.0.1'; // ← 모바일 versionName과 항상 일치시킬 것
+```
+
+---
+
 ## 동기화 규칙 (필수)
 
 app.js / index.html / style.css 수정 후 **항상** 세 곳에 동기화:
