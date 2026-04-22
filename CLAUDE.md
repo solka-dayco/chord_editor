@@ -29,13 +29,36 @@ Chords_editor/
 
 ---
 
-## 웹 버전 커밋 규칙 (필수)
+## 브랜치 전략
 
-**`git push origin main` 실행 전 반드시 아래 절차를 따를 것:**
+| 브랜치 | 용도 | 배포 대상 |
+|--------|------|-----------|
+| `staging` | 기능 개발 | - |
+| `main` | 모바일 릴리즈 | Android (Play Store) |
+| `web` | 웹 릴리즈 | GitHub Pages |
+
+### 규칙
+- `staging` → `main` : 모바일 커밋
+- `staging` → `web` : 웹 커밋 (동일 기능, 웹 전용 차이점만 적용)
+- `main` ↔ `web` 간 머지 없음 (병렬 진행)
+- 기능은 두 브랜치에서 항상 동일하게 유지
+
+### 웹/모바일 차이점 (브랜치 간 유일한 차이)
+| 항목 | main (모바일) | web |
+|------|--------------|-----|
+| `initAppVersion()` | Capacitor `App.getInfo()` 동적 조회 | `v버전` 하드코딩 |
+| `android/` 폴더 | 포함 | 불필요 (있어도 무관) |
+| `versionCode/versionName` | `build.gradle` 관리 | 해당 없음 |
+
+---
+
+## 웹 커밋 규칙 (필수)
+
+**`web` 브랜치에 커밋/push 전 반드시 아래 절차를 따를 것:**
 
 1. 사용자에게 현재 모바일 버전(versionName)을 확인하도록 요청
 2. 사용자가 버전을 직접 알려주면, `app.js`의 `initAppVersion()` 웹 분기 하드코딩 값을 해당 버전으로 업데이트
-3. 그 후 동기화 → 커밋 → push 진행
+3. 그 후 동기화 → 커밋 → `git push origin web` 진행
 
 ```js
 // app.js initAppVersion() 웹 분기
