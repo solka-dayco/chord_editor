@@ -324,7 +324,7 @@ pro_entitlement 클릭 → Attach → Pro 월간 구독 선택 → 저장
 
 | 브랜치 | versionName 형식 | 예시 |
 |--------|-----------------|------|
-| `dev` | `X.Y.Z_devN` | `1.0.2_dev1`, `1.0.2_dev2` |
+| `dev` | `X.Y.Z_dev_N` | `1.0.2_dev_1`, `1.0.2_dev_2` |
 | `staging` | `X.Y.Z_pre_N` | `1.0.2_pre_1`, `1.0.2_pre_2` |
 | `main` (정식 출시) | `X.Y.Z` | `1.0.2` |
 
@@ -334,7 +334,7 @@ pro_entitlement 클릭 → Attach → Pro 월간 구독 선택 → 저장
 
 ### 현재 상태 (2026-04-22 기준)
 - **main 최신 출시:** versionCode 28 / `1.0.1`
-- **dev 진행 중:** `1.0.2_dev1` (1.0.2 개발 시작)
+- **dev 진행 중:** `1.0.2_dev_1` (1.0.2 개발 시작)
 - **다음 staging:** `1.0.2_pre_1`
 
 ---
