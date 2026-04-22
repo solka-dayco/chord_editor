@@ -318,8 +318,24 @@ pro_entitlement 클릭 → Attach → Pro 월간 구독 선택 → 저장
 - `customerInfo.entitlements.active`가 비어있을 때 `planId` 파라미터를 폴백으로 사용
 - Entitlement 미연결 또는 Sandbox 지연 상황 모두 대응
 
-## 현재 빌드 버전
-- 버전코드 22 / 1.0.1_pre_10 (2026-04-21 기준 staging)
+## 버전 관리 전략
+
+### 브랜치별 versionName 규칙
+
+| 브랜치 | versionName 형식 | 예시 |
+|--------|-----------------|------|
+| `dev` | `X.Y.Z_devN` | `1.0.2_dev1`, `1.0.2_dev2` |
+| `staging` | `X.Y.Z_pre_N` | `1.0.2_pre_1`, `1.0.2_pre_2` |
+| `main` (정식 출시) | `X.Y.Z` | `1.0.2` |
+
+### versionCode 규칙
+- 커밋마다 +1 증가 (브랜치 무관, 단조 증가)
+- `android/app/build.gradle`에서 수동 관리
+
+### 현재 상태 (2026-04-22 기준)
+- **main 최신 출시:** versionCode 28 / `1.0.1`
+- **dev 진행 중:** `1.0.2_dev1` (1.0.2 개발 시작)
+- **다음 staging:** `1.0.2_pre_1`
 
 ---
 
