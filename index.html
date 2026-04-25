@@ -29,6 +29,13 @@
           <i data-lucide="circle-plus"></i>
         </button>
       </div>
+
+      <!-- 라이브러리 버튼 -->
+      <button class="sidebar-library-btn" id="btn-library" onclick="openLibrary()">
+        <i data-lucide="book-open"></i>
+        <span>라이브러리</span>
+      </button>
+
       <nav class="sidebar-nav">
         <div class="sidebar-section">
           <div class="sidebar-section-label">즐겨찾기</div>
@@ -225,6 +232,51 @@
       <!-- 프로젝트 뷰 -->
       <div class="view hidden" id="view-project">
         <!-- JS로 렌더링 -->
+      </div>
+
+      <!-- 라이브러리 뷰 -->
+      <div class="view hidden" id="view-library">
+
+        <!-- 검색 -->
+        <div class="lib-search-bar">
+          <i data-lucide="search" class="lib-search-icon"></i>
+          <input type="text" id="lib-search"
+                 placeholder="코드 검색... (C, Am, G7)"
+                 oninput="onLibSearch(this.value)" />
+        </div>
+
+        <!-- 뷰어 -->
+        <div class="lib-viewer">
+          <div class="lib-viewer-canvas-wrap">
+            <canvas id="lib-canvas"></canvas>
+          </div>
+          <div class="lib-viewer-info">
+            <div class="lib-viewer-name" id="lib-viewer-name">—</div>
+            <div class="lib-viewer-type" id="lib-viewer-type"></div>
+          </div>
+          <div class="lib-viewer-controls">
+            <button class="mode-btn" id="lib-finger-btn"
+                    onclick="toggleLibFingerNum()" title="손가락 번호">
+              <i data-lucide="hand"></i>
+            </button>
+            <button class="btn btn-ghost" onclick="libPlayChord()">
+              <i data-lucide="play"></i> 재생
+            </button>
+            <button class="btn btn-ghost" onclick="exportLibChordImage()">
+              <i data-lucide="image"></i> 이미지 저장
+            </button>
+            <button class="btn btn-primary" onclick="importLibChordToProject()">
+              <i data-lucide="download"></i> 가져오기
+            </button>
+          </div>
+        </div>
+
+        <!-- 근음 탭 -->
+        <div class="lib-root-tabs" id="lib-root-tabs"></div>
+
+        <!-- 코드 카드 그리드 -->
+        <div class="lib-cards" id="lib-cards"></div>
+
       </div>
 
     </div>
@@ -579,5 +631,6 @@
 
   <script src="app.js"></script>
   <script src="voicing-library.js"></script>
+  <script src="chords-library.js"></script>
 </body>
 </html>

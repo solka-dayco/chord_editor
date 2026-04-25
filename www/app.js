@@ -613,6 +613,7 @@ function drawCanvas(c, ratio, data = null) {
   const _fretNum  = data
     ? (data.fretNumber >= 2 ? String(data.fretNumber) : '')
     : (currentFretNumber >= 2 ? String(currentFretNumber) : '');
+  const _nameOverride = data ? (data.nameOverride ?? null) : null;
 
   const w   = Math.round(BASE_W       * ratio);
   const ch  = Math.round(BASE_H       * ratio);
@@ -713,27 +714,35 @@ function drawCanvas(c, ratio, data = null) {
   const sY    = bY - Math.round(14 * sc);
 
   let cx = tl;
-  const base = _root + _triad + _seventh + (_func === 'b5' ? '' : _func);
-  c.font = `400 ${bSize}px "Times New Roman", serif`;
-  c.fillText(base, cx, bY);
-  cx += c.measureText(base).width;
-
-  if (_func === 'b5') {
-    c.font = `400 ${sSize}px "Times New Roman", serif`;
-    c.fillText('(b5)', cx, sY);
-    cx += c.measureText('(b5)').width;
-  }
-
-  if (_tensions && _tensions.length) {
-    const ts = '(' + _tensions.join(',') + ')';
-    c.font = `400 ${sSize}px "Times New Roman", serif`;
-    c.fillText(ts, cx, sY);
-    cx += c.measureText(ts).width;
-  }
-
-  if (_bass) {
+  if (_nameOverride !== null) {
+    // 라이브러리 뷰어: 단순 문자열 렌더링
+    if (_nameOverride) {
+      c.font = `400 ${bSize}px "Times New Roman", serif`;
+      c.fillText(_nameOverride, cx, bY);
+    }
+  } else {
+    const base = _root + _triad + _seventh + (_func === 'b5' ? '' : _func);
     c.font = `400 ${bSize}px "Times New Roman", serif`;
-    c.fillText('/' + _bass, cx, bY);
+    c.fillText(base, cx, bY);
+    cx += c.measureText(base).width;
+
+    if (_func === 'b5') {
+      c.font = `400 ${sSize}px "Times New Roman", serif`;
+      c.fillText('(b5)', cx, sY);
+      cx += c.measureText('(b5)').width;
+    }
+
+    if (_tensions && _tensions.length) {
+      const ts = '(' + _tensions.join(',') + ')';
+      c.font = `400 ${sSize}px "Times New Roman", serif`;
+      c.fillText(ts, cx, sY);
+      cx += c.measureText(ts).width;
+    }
+
+    if (_bass) {
+      c.font = `400 ${bSize}px "Times New Roman", serif`;
+      c.fillText('/' + _bass, cx, bY);
+    }
   }
 
   // 프렛 번호
@@ -1921,6 +1930,15 @@ function navigateTo(view, projectId) {
 
   document.getElementById('view-editor').classList.toggle('hidden', view !== 'editor');
   document.getElementById('view-project').classList.toggle('hidden', view !== 'project');
+  document.getElementById('view-library')?.classList.toggle('hidden', view !== 'library');
+  document.getElementById('btn-library')?.classList.toggle('active', view === 'library');
+
+  if (view === 'library') {
+    closeSidebar();
+    renderLibRootTabs();
+    renderLibCards(_libRoot);
+    return;
+  }
 
   if (view === 'editor') {
     contextProjectId = projectId || null;
@@ -4633,3 +4651,258 @@ window._handleShareImport = async function(rawCode) {
     });
   }
 })();
+
+// ═══════════════════════════════════════════════════════════════
+// 코드 라이브러리
+// ═══════════════════════════════════════════════════════════════
+let _libRoot      = 'C';
+let _libEntry     = null;
+let _libFingerMode = true;
+let _libCanvas    = null;
+let _libCtx       = null;
+const LIB_VIEWER_W = 280;
+const LIB_VIEWER_RATIO = LIB_VIEWER_W / BASE_W;
+const LIB_MINI_W   = 120;
+const LIB_MINI_RATIO = LIB_MINI_W / BASE_W;
+
+function openLibrary() {
+  navigateTo('library');
+}
+
+function renderLibRootTabs() {
+  const roots   = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const flatMap  = { 'C#':'Db','D#':'Eb','F#':'Gb','G#':'Ab','A#':'Bb' };
+  const container = document.getElementById('lib-root-tabs');
+  if (!container) return;
+  container.innerHTML = roots.map(r => {
+    const label = flatMap[r]
+      ? `${r}<span class="lib-tab-flat">${flatMap[r]}</span>`
+      : r;
+    return `<button class="lib-root-tab${r === _libRoot ? ' active' : ''}"
+                    onclick="selectLibRoot('${r}')">${label}</button>`;
+  }).join('');
+}
+
+function selectLibRoot(root) {
+  _libRoot = root;
+  renderLibRootTabs();
+  renderLibCards(root);
+}
+
+function renderLibCards(root) {
+  const entries   = (window.chordsLibrary || {})[root] || [];
+  const container = document.getElementById('lib-cards');
+  if (!container) return;
+
+  if (!entries.length) {
+    container.innerHTML = '<div class="lib-empty">등록된 코드 없음</div>';
+    return;
+  }
+
+  const useFlat = accidental === 'flat';
+  container.innerHTML = entries.map((entry, i) => {
+    const dispName = useFlat ? entry.flatName : entry.name;
+    return `<div class="lib-card${_libEntry === entry ? ' active' : ''}"
+                 onclick="selectLibEntry(${i})">
+              <canvas class="lib-card-canvas" data-idx="${i}"
+                      width="${LIB_MINI_W}"
+                      height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
+              <div class="lib-card-name">${dispName}</div>
+            </div>`;
+  }).join('');
+
+  entries.forEach((entry, i) => {
+    const c = container.querySelector(`[data-idx="${i}"]`);
+    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, entry, '');
+  });
+}
+
+function selectLibEntry(idx) {
+  const entries = (window.chordsLibrary || {})[_libRoot] || [];
+  _libEntry = entries[idx];
+  if (!_libEntry) return;
+
+  const useFlat  = accidental === 'flat';
+  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
+  const nameEl   = document.getElementById('lib-viewer-name');
+  const typeEl   = document.getElementById('lib-viewer-type');
+  if (nameEl) nameEl.textContent = dispName;
+  if (typeEl) typeEl.textContent = _libEntry.voicingLabel || '';
+
+  _ensureLibCanvas();
+  drawLibViewerCanvas();
+  renderLibCards(_libRoot); // 선택 상태 재렌더
+}
+
+function _ensureLibCanvas() {
+  if (!_libCanvas) {
+    _libCanvas = document.getElementById('lib-canvas');
+    if (_libCanvas) {
+      _libCanvas.width  = LIB_VIEWER_W;
+      _libCanvas.height = Math.round(BASE_H * LIB_VIEWER_RATIO);
+      _libCtx = _libCanvas.getContext('2d');
+    }
+  }
+}
+
+function drawLibViewerCanvas() {
+  _ensureLibCanvas();
+  if (!_libCanvas || !_libEntry) return;
+  const useFlat  = accidental === 'flat';
+  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
+  _drawLibCanvas(_libCanvas, LIB_VIEWER_RATIO, _libEntry,
+                 _libFingerMode ? dispName : dispName);
+}
+
+// 공통 캔버스 렌더 (viewer / mini card 공용)
+function _drawLibCanvas(canvas, ratio, entry, nameOverride) {
+  const frets     = entry.frets;
+  const fingering = entry.fingering;
+
+  const dotsArr = frets
+    .map((f, s) => f !== null && f > 0
+      ? { s, f, n: _libFingerMode ? (fingering?.[s] ?? 0) : 0 }
+      : null)
+    .filter(Boolean);
+
+  drawCanvas(canvas, ratio, {
+    root: '', triad: '', seventh: '', func: '', tensions: [], bass: '',
+    nameOverride,
+    dots:         dotsArr,
+    openMute:     entry.openMute,
+    barre:        entry.barre,
+    fretNumber:   entry.fretNumber,
+    fingerNumMode: _libFingerMode,
+  });
+}
+
+function toggleLibFingerNum() {
+  _libFingerMode = !_libFingerMode;
+  const btn = document.getElementById('lib-finger-btn');
+  if (btn) btn.classList.toggle('active', _libFingerMode);
+  drawLibViewerCanvas();
+  // 미니 카드도 재렌더
+  if (_libEntry) renderLibCards(_libRoot);
+}
+
+function libPlayChord() {
+  if (!_libEntry) return;
+  playChord({ dots: _libEntry.frets.map((f, s) => f !== null && f > 0 ? {s, f} : null).filter(Boolean), openMute: _libEntry.openMute });
+}
+
+function onLibSearch(query) {
+  const q = (query || '').trim().toLowerCase();
+  const container = document.getElementById('lib-cards');
+  if (!container) return;
+
+  if (!q) { renderLibCards(_libRoot); return; }
+
+  const lib = window.chordsLibrary || {};
+  const results = [];
+  for (const root of Object.keys(lib)) {
+    for (const entry of lib[root]) {
+      if (entry.name.toLowerCase().includes(q) ||
+          entry.flatName.toLowerCase().includes(q)) {
+        results.push(entry);
+      }
+    }
+  }
+
+  if (!results.length) {
+    container.innerHTML = '<div class="lib-empty">검색 결과 없음</div>';
+    return;
+  }
+
+  const useFlat = accidental === 'flat';
+  container.innerHTML = results.map((entry, i) => {
+    const dispName = useFlat ? entry.flatName : entry.name;
+    return `<div class="lib-card${_libEntry === entry ? ' active' : ''}"
+                 onclick="selectLibSearchResult(${i})">
+              <canvas class="lib-card-canvas" data-sidx="${i}"
+                      width="${LIB_MINI_W}"
+                      height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
+              <div class="lib-card-name">${dispName}</div>
+            </div>`;
+  }).join('');
+  container._searchResults = results;
+  results.forEach((entry, i) => {
+    const c = container.querySelector(`[data-sidx="${i}"]`);
+    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, entry, '');
+  });
+}
+
+function selectLibSearchResult(idx) {
+  const container = document.getElementById('lib-cards');
+  const results = container?._searchResults;
+  if (!results) return;
+  _libEntry = results[idx];
+  if (!_libEntry) return;
+  const useFlat  = accidental === 'flat';
+  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
+  const nameEl   = document.getElementById('lib-viewer-name');
+  const typeEl   = document.getElementById('lib-viewer-type');
+  if (nameEl) nameEl.textContent = dispName;
+  if (typeEl) typeEl.textContent = _libEntry.voicingLabel || '';
+  _ensureLibCanvas();
+  drawLibViewerCanvas();
+}
+
+function exportLibChordImage() {
+  if (!_libEntry) return;
+  _ensureLibCanvas();
+  drawLibViewerCanvas();
+  _libCanvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const useFlat = accidental === 'flat';
+    const nm = (useFlat ? _libEntry.flatName : _libEntry.name).replace(/\//g, '_');
+    a.download = nm + '.png';
+    a.click();
+  });
+}
+
+function importLibChordToProject() {
+  if (!_libEntry) return;
+  const entry    = _libEntry;
+  const useFlat  = accidental === 'flat';
+  const dispName = useFlat ? entry.flatName : entry.name;
+
+  // 에디터 상태에 라이브러리 코드 로드
+  dots = entry.frets
+    .map((f, s) => (f !== null && f > 0)
+      ? { s, f, n: _libFingerMode ? (entry.fingering?.[s] ?? 0) : 0 }
+      : null)
+    .filter(Boolean);
+
+  openMute = entry.frets.map((f, s) => {
+    if (f === null || entry.openMute[s] === 'mute') return 'mute';
+    return 'open';
+  });
+
+  barreActive = {};
+  Object.entries(entry.barre).forEach(([f, v]) => {
+    barreActive[parseInt(f)] = v;
+  });
+
+  currentFretNumber = entry.fretNumber >= 2 ? entry.fretNumber : 2;
+  fingerNumMode = _libFingerMode;
+  const fnBtn = document.getElementById('btn-finger-num');
+  if (fnBtn) fnBtn.classList.toggle('active', fingerNumMode);
+
+  // 코드명 구성요소 설정
+  const rootMatch = dispName.match(/^([A-G][#b]?)/);
+  const rootNote  = rootMatch ? rootMatch[1] : 'A';
+  const comp = window.qualityToComponents ? window.qualityToComponents(entry.quality)
+    : { triad: '', seventh: '', func: '', tensions: [] };
+  selectedRoot    = rootNote;
+  selectedTriad   = comp.triad;
+  selectedSeventh = comp.seventh;
+  selectedFunc    = comp.func;
+  selectedTensions = [...(comp.tensions || [])];
+  selectedBass    = '';
+
+  navigateTo('editor');
+  renderRootBtns();
+  renderBassBtns();
+  updateChordDisplay();
+}

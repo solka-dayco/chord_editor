@@ -2074,3 +2074,202 @@ canvas {
   background: var(--border);
   margin: 20px 0;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   코드 라이브러리
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 사이드바 라이브러리 버튼 */
+.sidebar-library-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Pretendard', sans-serif;
+  transition: background .15s;
+}
+.sidebar-library-btn svg { width: 16px; height: 16px; }
+.sidebar-library-btn:hover { background: var(--bg); }
+.sidebar-library-btn.active {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+/* 라이브러리 뷰 레이아웃 */
+#view-library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* 검색 바 */
+.lib-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.lib-search-icon { color: var(--text-muted); }
+.lib-search-icon svg { width: 16px; height: 16px; }
+.lib-search-bar input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: 'Pretendard', sans-serif;
+}
+.lib-search-bar input::placeholder { color: var(--text-muted); }
+
+/* 뷰어 영역 */
+.lib-viewer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.lib-viewer-canvas-wrap { flex-shrink: 0; }
+#lib-canvas {
+  width: 140px;
+  height: 105px;
+  display: block;
+}
+.lib-viewer-info {
+  flex: 1;
+  min-width: 0;
+}
+.lib-viewer-name {
+  font-family: 'Times New Roman', serif;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-viewer-type {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.lib-viewer-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.lib-viewer-controls .btn {
+  font-size: 12px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+/* 근음 탭 */
+.lib-root-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 8px 20px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+.lib-root-tabs::-webkit-scrollbar { display: none; }
+
+.lib-root-tab {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: 'Pretendard', sans-serif;
+  text-align: center;
+  line-height: 1.3;
+  border-radius: 0;
+  min-width: 32px;
+  color: var(--text-primary);
+  transition: background .12s, border-color .12s;
+  flex-shrink: 0;
+}
+.lib-tab-flat {
+  display: block;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.lib-root-tab:hover { background: var(--bg); }
+.lib-root-tab.active {
+  background: var(--text-primary);
+  color: var(--bg);
+  border-color: var(--text-primary);
+}
+.lib-root-tab.active .lib-tab-flat { color: var(--bg); opacity: 0.6; }
+
+/* 코드 카드 그리드 */
+.lib-cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  padding: 12px 20px;
+  align-content: start;
+}
+
+/* 카드 (라운드 없음) */
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  padding: 6px 4px 5px;
+  border-radius: 0;
+  transition: border-color .12s, background .12s;
+}
+.lib-card:hover { background: var(--bg); }
+.lib-card.active {
+  border-color: var(--text-primary);
+  background: var(--bg);
+}
+.lib-card-canvas {
+  width: 60px;
+  height: 45px;
+  display: block;
+}
+.lib-card-name {
+  font-family: 'Times New Roman', serif;
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 3px;
+  text-align: center;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+}
+
+.lib-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 20px 0;
+  grid-column: 1 / -1;
+}
