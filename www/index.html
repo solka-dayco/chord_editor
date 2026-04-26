@@ -60,7 +60,7 @@
     </aside>
 
     <!-- ── 메인 영역 ── -->
-    <div class="main-area">
+    <div class="main-area" id="main-area">
 
       <!-- 에디터 뷰 -->
       <div class="view" id="view-editor">
@@ -191,13 +191,7 @@
               <button class="ab-btn" onclick="resetAll()">초기화</button>
               <button class="ab-btn" onclick="strumChord()">▶ 재생</button>
               <span class="ab-spacer"></span>
-              <select id="export-scale" class="ab-select">
-                <option value="0.5">x0.5</option>
-                <option value="1" selected>x1</option>
-                <option value="2">x2</option>
-                <option value="3">x3</option>
-              </select>
-              <button class="ab-btn ab-btn-primary" onclick="savePNG()">저장</button>
+              <button class="ab-btn ab-btn-primary" onclick="showScaleDropdown(this,'editor')">이미지 저장</button>
             </div>
           </div>
 
@@ -234,52 +228,93 @@
         <!-- JS로 렌더링 -->
       </div>
 
-      <!-- 라이브러리 뷰 -->
-      <div class="view hidden" id="view-library">
+    </div>
 
-        <!-- 검색 -->
-        <div class="lib-search-bar">
-          <i data-lucide="search" class="lib-search-icon"></i>
-          <input type="text" id="lib-search"
-                 placeholder="코드 검색... (C, Am, G7)"
-                 oninput="onLibSearch(this.value)" />
+    <!-- 라이브러리 뷰 (메인 영역 밖, app-wrapper 직속 자식) -->
+    <div class="hidden" id="view-library">
+
+      <!-- 0. 상단 바: 뒤로가기 -->
+      <div class="lib-topbar">
+        <button class="lib-back-btn" onclick="closeLibrary()" title="뒤로가기">
+          <i data-lucide="arrow-left"></i>
+        </button>
+      </div>
+
+      <!-- 1. 최상단 검색창 -->
+      <div class="lib-search-bar">
+        <i data-lucide="search" class="lib-search-icon"></i>
+        <input type="text" id="lib-search"
+               placeholder="코드 검색... (C, Am, G7)"
+               oninput="onLibSearch(this.value)"
+               onkeydown="if(event.key==='Enter'){event.target.blur();showLibSearchModal();}" />
+      </div>
+
+      <!-- 검색 결과 모달 (lib-action-bar + lib-bottom 위에 슬라이드 업) -->
+      <div class="lib-search-modal" id="lib-search-modal">
+        <div class="lib-search-modal-header">
+          <span class="lib-search-modal-title" id="lib-search-modal-title"></span>
+          <button class="icon-btn" onclick="closeLibSearchModal()">
+            <i data-lucide="x"></i>
+          </button>
         </div>
+        <div class="lib-cards" id="lib-search-cards"></div>
+      </div>
 
-        <!-- 뷰어 -->
-        <div class="lib-viewer">
-          <div class="lib-viewer-canvas-wrap">
-            <canvas id="lib-canvas"></canvas>
-          </div>
-          <div class="lib-viewer-info">
-            <div class="lib-viewer-name" id="lib-viewer-name">—</div>
-            <div class="lib-viewer-type" id="lib-viewer-type"></div>
-          </div>
-          <div class="lib-viewer-controls">
-            <button class="mode-btn" id="lib-finger-btn"
-                    onclick="toggleLibFingerNum()" title="손가락 번호">
-              <i data-lucide="hand"></i>
-            </button>
-            <button class="btn btn-ghost" onclick="libPlayChord()">
-              <i data-lucide="play"></i> 재생
-            </button>
-            <button class="btn btn-ghost" onclick="exportLibChordImage()">
-              <i data-lucide="image"></i> 이미지 저장
-            </button>
-            <button class="btn btn-primary" onclick="importLibChordToProject()">
-              <i data-lucide="download"></i> 가져오기
-            </button>
+      <!-- 2. 코드 뷰어: 캔버스 + 재생버튼 + 운지 내비게이션 -->
+      <div class="lib-viewer">
+        <canvas id="lib-canvas"></canvas>
+        <button class="lib-play-btn" onclick="libPlayChord()" title="재생">
+          <i data-lucide="play"></i>
+        </button>
+        <div class="lib-fingering-nav" id="lib-fingering-nav" style="display:none;">
+          <button class="lib-fingering-btn" onclick="prevLibFingering()">
+            <i data-lucide="chevron-left"></i>
+          </button>
+          <span class="lib-fingering-label">1 / 2</span>
+          <button class="lib-fingering-btn" onclick="nextLibFingering()">
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. 액션 바: 샵/플랫 + 손가락번호 + 저장 + 가져오기 -->
+      <div class="lib-action-bar">
+        <div class="accidental-toggle">
+          <button class="acc-btn active" id="lib-acc-sharp"
+                  onclick="setLibAccidental('sharp')">#</button>
+          <button class="acc-btn" id="lib-acc-flat"
+                  onclick="setLibAccidental('flat')">b</button>
+        </div>
+        <button class="mode-btn active" id="lib-finger-btn"
+                onclick="toggleLibFingerNum()" title="손가락 번호">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10"/>
+            <text x="12" y="16.5" text-anchor="middle" font-size="11" font-family="serif" fill="currentColor" stroke="none" font-weight="bold">T</text>
+          </svg>
+        </button>
+        <span class="ab-spacer"></span>
+        <button class="ab-btn" onclick="showScaleDropdown(this,'library')">이미지 저장</button>
+        <button class="ab-btn ab-btn-primary" onclick="importLibChordToProject()">가져오기</button>
+      </div>
+
+      <!-- 4. 코드 목록: 근음 세로(좌) + 카드 그리드(우) -->
+      <div class="lib-bottom">
+        <!-- 보이싱 피커 오버레이: lib-bottom 전체 커버, action-bar는 덮지 않음 -->
+        <div class="lib-voicing-overlay" id="lib-voicing-overlay"
+             onclick="closeVoicingModal()"></div>
+        <div class="lib-root-list" id="lib-root-tabs"></div>
+        <div class="lib-cards-area">
+          <div class="lib-cards" id="lib-cards"></div>
+          <!-- 보이싱 피커 모달: 카드 에어리어 위에서 확장 -->
+          <div class="lib-voicing-modal" id="lib-voicing-modal"
+               onclick="closeVoicingModal()">
+            <div class="lib-voicing-grid" id="lib-voicing-grid"></div>
           </div>
         </div>
-
-        <!-- 근음 탭 -->
-        <div class="lib-root-tabs" id="lib-root-tabs"></div>
-
-        <!-- 코드 카드 그리드 -->
-        <div class="lib-cards" id="lib-cards"></div>
-
       </div>
 
     </div>
+
   </div>
 
   <!-- ── 모달: 뷰 ── -->
@@ -631,6 +666,15 @@
 
   <script src="app.js"></script>
   <script src="voicing-library.js"></script>
+  <script src="chord-voicings.js"></script>
   <script src="chords-library.js"></script>
+
+  <!-- 이미지 저장 배율 드롭다운 (에디터/라이브러리 공용) -->
+  <div class="scale-dropdown" id="scale-dropdown">
+    <div class="scale-dropdown-item" data-scale="0.5" onclick="onScaleSelect(this)"><span>0.5배</span><span>200×150 px</span></div>
+    <div class="scale-dropdown-item" data-scale="1"   onclick="onScaleSelect(this)"><span>1배</span><span>400×300 px</span></div>
+    <div class="scale-dropdown-item" data-scale="2"   onclick="onScaleSelect(this)"><span>2배</span><span>800×600 px</span></div>
+    <div class="scale-dropdown-item" data-scale="3"   onclick="onScaleSelect(this)"><span>3배</span><span>1200×900 px</span></div>
+  </div>
 </body>
 </html>

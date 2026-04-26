@@ -1,21 +1,66 @@
 // ═══════════════════════════════════════════════════════════════
-// chords-library.js  — 코드 라이브러리 데이터
+// chords-library.js  — 코드 라이브러리 빌더
+// 보이싱 원본 데이터: chord-voicings.js (반드시 먼저 로드)
 // ═══════════════════════════════════════════════════════════════
 (function () {
   'use strict';
 
-  // ── 헬퍼 (voicing-library.js와 동일) ─────────────────────────
+  // ── 음정 헬퍼 ────────────────────────────────────────────────
+  // 줄 인덱스 (0=6번줄, 1=5번줄, ..., 5=1번줄) 기준 개방 음 피치 클래스
   const _PCS = [4, 9, 2, 7, 11, 4];
   const _S   = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const _F   = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 
+  // fn(줄인덱스, 프렛, flat?) → 음이름
   function fn(si, fret, flat = false) {
     return (flat ? _F : _S)[(_PCS[si] + fret) % 12];
   }
+  // chord-voicings.js의 name 함수에서 음이름 계산에 사용할 수 있도록 전역 노출
+  // 줄 인덱스: 0=6번줄(E), 1=5번줄(A), 2=4번줄(D), 3=3번줄(G), 4=2번줄(B), 5=1번줄(e)
+  window.chordNoteName = fn;
 
-  function evalPat(pattern, r) {
-    return pattern.map(p => {
-      if (p === 'x') return null;
+  // 플랫 근음 → 샵 근음 정규화 (라이브러리 키 분류용)
+  const FLAT_TO_SHARP = { 'Db':'C#', 'Eb':'D#', 'Gb':'F#', 'Ab':'G#', 'Bb':'A#' };
+
+  // quality → 코드명 접미사 ('M'은 빈 문자열)
+  const Q_SUFFIX = {
+    'M':'', 'm':'m', 'M7':'M7', '7':'7', 'm7':'m7',
+    'sus4':'sus4', '7sus4':'7sus4', 'add9':'add9', 'sus2':'sus2',
+    'aug':'aug', 'dim':'dim', 'aug7':'aug7', 'dim7':'dim7',
+    'm7(b5)':'m7(b5)', '6':'6', 'm6':'m6',
+  };
+
+  // ── 품질 정렬 순서 ────────────────────────────────────────────
+  const QUALITY_ORDER = [
+    'M', 'm', 'M7', '7', 'm7', 'sus4', '7sus4', 'add9',
+    'sus2', 'aug', 'dim', 'aug7', 'dim7', 'm7(b5)', '6', 'm6',
+  ];
+
+  // ── 파싱 헬퍼 ────────────────────────────────────────────────
+
+  // 'x 3 2 0 1 0'  → [null, 3, 2, 0, 1, 0]
+  // 'x r r+2 r r'  → [null, 'r', 'r+2', 'r', 'r']  (패턴 토큰 보존)
+  function parseTokens(str) {
+    return str.trim().split(/\s+/).map(t => {
+      if (t === 'x') return null;
+      if (/^\d+$/.test(t)) return parseInt(t, 10);
+      return t; // 'r', 'r+2', 'r-1' 등 패턴 토큰
+    });
+  }
+
+  // 'x 1 3 2 x x' → [null, 1, 3, 2, null, null]
+  function parseFingers(str) {
+    return str.trim().split(/\s+/).map(t => {
+      if (t === 'x' || t === '0') return null;
+      if (t === 'T') return 'T';
+      return parseInt(t, 10);
+    });
+  }
+
+  // 패턴 토큰 배열 + r값 → 실제 프렛 배열
+  function evalPat(tokens, r) {
+    return tokens.map(p => {
+      if (p === null) return null;
       if (typeof p === 'number') return p;
       if (p === 'r') return r;
       const m = String(p).match(/^r([+-]\d+)$/);
@@ -24,331 +69,99 @@
     });
   }
 
-  // ── 품질 정렬 순서 ────────────────────────────────────────────
-  const QUALITY_ORDER = [
-    'M', 'm', 'M7', '7', 'm7', 'sus4', '7sus4', 'add9',
-    'aug', 'dim', 'aug7', 'dim7', 'm7(b5)', '6', 'm6'
-  ];
-
-  // ── 패턴 기반 보이싱 (바레 코드) ─────────────────────────────
-  //   pattern  : 6번 줄→1번 줄 순 (index 0 = 6번줄)
-  //   rRange   : [min, max] root fret 범위
-  //   name     : (r, flat) => 코드명 문자열
-  //   fingering: 줄별 손가락 번호 (null = 오픈/뮤트)
-  //   hasBarre : true 이면 r번 프렛에 바레 자동 생성
-  const LIB_PATTERNS = [
-
-    // ── Major ─────────────────────────────────────────────────
-    {
-      quality: 'M', label: 'E형 바레',
-      pattern: ['r', 'r+2', 'r+2', 'r+1', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 4, 2, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat),
-    },
-    {
-      quality: 'M', label: 'A형 바레',
-      pattern: ['x', 'r', 'r+2', 'r+2', 'r+2', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 3, 3, 3, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat),
-    },
-
-    // ── minor ─────────────────────────────────────────────────
-    {
-      quality: 'm', label: 'Em형 바레',
-      pattern: ['r', 'r+2', 'r+2', 'r', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 4, 1, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat) + 'm',
-    },
-    {
-      quality: 'm', label: 'Am형 바레',
-      pattern: ['x', 'r', 'r+2', 'r+2', 'r+1', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 3, 4, 2, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + 'm',
-    },
-
-    // ── Major 7 ───────────────────────────────────────────────
-    {
-      quality: 'M7', label: 'E형 M7 바레',
-      pattern: ['r', 'r+2', 'r+1', 'r+1', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 2, 2, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat) + 'M7',
-    },
-    {
-      quality: 'M7', label: 'A형 M7 바레',
-      pattern: ['x', 'r', 'r+2', 'r+1', 'r+2', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 3, 2, 4, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + 'M7',
-    },
-
-    // ── Dominant 7 ────────────────────────────────────────────
-    {
-      quality: '7', label: 'E형 7 바레',
-      pattern: ['r', 'r+2', 'r', 'r+1', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 1, 2, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat) + '7',
-    },
-    {
-      quality: '7', label: 'A형 7 바레',
-      pattern: ['x', 'r', 'r+2', 'r', 'r+2', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 3, 1, 4, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + '7',
-    },
-
-    // ── minor 7 ───────────────────────────────────────────────
-    {
-      quality: 'm7', label: 'Em형 m7 바레',
-      pattern: ['r', 'r+2', 'r', 'r', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 1, 1, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat) + 'm7',
-    },
-    {
-      quality: 'm7', label: 'Am형 m7 바레',
-      pattern: ['x', 'r', 'r+2', 'r', 'r+1', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 3, 1, 2, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + 'm7',
-    },
-
-    // ── sus4 ──────────────────────────────────────────────────
-    {
-      quality: 'sus4', label: 'E형 sus4',
-      pattern: ['r', 'r+2', 'r+2', 'r+2', 'r', 'r'],
-      rRange: [0, 11],
-      fingering: [1, 3, 3, 3, 1, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(0, r, flat) + 'sus4',
-    },
-    {
-      quality: 'sus4', label: 'A형 sus4',
-      pattern: ['x', 'r', 'r+2', 'r+2', 'r+3', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 2, 3, 4, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + 'sus4',
-    },
-
-    // ── 7sus4 ─────────────────────────────────────────────────
-    {
-      quality: '7sus4', label: 'A형 7sus4',
-      pattern: ['x', 'r', 'r', 'r', 'r+3', 'r'],
-      rRange: [0, 11],
-      fingering: [null, 1, 1, 1, 4, 1],
-      hasBarre: true,
-      name: (r, flat) => fn(1, r, flat) + '7sus4',
-    },
-  ];
-
-  // ── 정적 오픈 보이싱 ─────────────────────────────────────────
-  //   frets   : [6번줄, 5번줄, 4번줄, 3번줄, 2번줄, 1번줄]
-  //             null = 연주 안 함, 0 = 개방현
-  //   openMute: 'mute'=×, 'open'=○, null=점(dot)으로 표시
-  const LIB_STATIC = [
-
-    // ── Major 오픈 ────────────────────────────────────────────
-    {
-      quality: 'M', label: 'Open', root: 'C',
-      frets:    [null, 3, 2, 0, 1, 0],
-      fingering:[null, 3, 2, null, 1, null],
-      openMute: ['mute', null, null, 'open', null, 'open'],
-    },
-    {
-      quality: 'M', label: 'Open', root: 'D',
-      frets:    [null, null, 0, 2, 3, 2],
-      fingering:[null, null, null, 1, 3, 2],
-      openMute: ['mute', 'mute', 'open', null, null, null],
-    },
-    {
-      quality: 'M', label: 'Open', root: 'E',
-      frets:    [0, 2, 2, 1, 0, 0],
-      fingering:[null, 2, 3, 1, null, null],
-      openMute: ['open', null, null, null, 'open', 'open'],
-    },
-    {
-      quality: 'M', label: 'Open', root: 'G',
-      frets:    [3, 2, 0, 0, 0, 3],
-      fingering:[2, 1, null, null, null, 3],
-      openMute: [null, null, 'open', 'open', 'open', null],
-    },
-    {
-      quality: 'M', label: 'Open', root: 'A',
-      frets:    [null, 0, 2, 2, 2, 0],
-      fingering:[null, null, 1, 2, 3, null],
-      openMute: ['mute', 'open', null, null, null, 'open'],
-    },
-
-    // ── minor 오픈 ────────────────────────────────────────────
-    {
-      quality: 'm', label: 'Open', root: 'Em',
-      frets:    [0, 2, 2, 0, 0, 0],
-      fingering:[null, 2, 3, null, null, null],
-      openMute: ['open', null, null, 'open', 'open', 'open'],
-    },
-    {
-      quality: 'm', label: 'Open', root: 'Am',
-      frets:    [null, 0, 2, 2, 1, 0],
-      fingering:[null, null, 2, 3, 1, null],
-      openMute: ['mute', 'open', null, null, null, 'open'],
-    },
-    {
-      quality: 'm', label: 'Open', root: 'Dm',
-      frets:    [null, null, 0, 2, 3, 1],
-      fingering:[null, null, null, 2, 3, 1],
-      openMute: ['mute', 'mute', 'open', null, null, null],
-    },
-
-    // ── Major 7 오픈 ──────────────────────────────────────────
-    {
-      quality: 'M7', label: 'Open', root: 'CM7',
-      frets:    [null, 3, 2, 0, 0, 0],
-      fingering:[null, 3, 2, null, null, null],
-      openMute: ['mute', null, null, 'open', 'open', 'open'],
-    },
-    {
-      quality: 'M7', label: 'Open', root: 'DM7',
-      frets:    [null, null, 0, 2, 2, 2],
-      fingering:[null, null, null, 1, 2, 3],
-      openMute: ['mute', 'mute', 'open', null, null, null],
-    },
-    {
-      quality: 'M7', label: 'Open', root: 'EM7',
-      frets:    [0, 2, 1, 1, 0, 0],
-      fingering:[null, 3, 2, 1, null, null],
-      openMute: ['open', null, null, null, 'open', 'open'],
-    },
-
-    // ── Dominant 7 오픈 ───────────────────────────────────────
-    {
-      quality: '7', label: 'Open', root: 'G7',
-      frets:    [3, 2, 0, 0, 0, 1],
-      fingering:[3, 2, null, null, null, 1],
-      openMute: [null, null, 'open', 'open', 'open', null],
-    },
-    {
-      quality: '7', label: 'Open', root: 'C7',
-      frets:    [null, 3, 2, 3, 1, 0],
-      fingering:[null, 3, 2, 4, 1, null],
-      openMute: ['mute', null, null, null, null, 'open'],
-    },
-    {
-      quality: '7', label: 'Open', root: 'D7',
-      frets:    [null, null, 0, 2, 1, 2],
-      fingering:[null, null, null, 2, 1, 3],
-      openMute: ['mute', 'mute', 'open', null, null, null],
-    },
-    {
-      quality: '7', label: 'Open', root: 'E7',
-      frets:    [0, 2, 0, 1, 0, 0],
-      fingering:[null, 2, null, 1, null, null],
-      openMute: ['open', null, 'open', null, 'open', 'open'],
-    },
-    {
-      quality: '7', label: 'Open', root: 'A7',
-      frets:    [null, 0, 2, 0, 2, 0],
-      fingering:[null, null, 2, null, 3, null],
-      openMute: ['mute', 'open', null, 'open', null, 'open'],
-    },
-
-    // ── minor 7 오픈 ──────────────────────────────────────────
-    {
-      quality: 'm7', label: 'Open', root: 'Em7',
-      frets:    [0, 2, 0, 0, 0, 0],
-      fingering:[null, 2, null, null, null, null],
-      openMute: ['open', null, 'open', 'open', 'open', 'open'],
-    },
-    {
-      quality: 'm7', label: 'Open', root: 'Am7',
-      frets:    [null, 0, 2, 0, 1, 0],
-      fingering:[null, null, 2, null, 1, null],
-      openMute: ['mute', 'open', null, 'open', null, 'open'],
-    },
-    {
-      quality: 'm7', label: 'Open', root: 'Dm7',
-      frets:    [null, null, 0, 2, 1, 1],
-      fingering:[null, null, null, 2, 1, 1],
-      openMute: ['mute', 'mute', 'open', null, null, null],
-    },
-  ];
+  // frets 배열 → openMute 배열 자동 추론
+  // null → 'mute'(×), 0 → 'open'(○), 양수 → null(dot)
+  function deriveOpenMute(frets) {
+    return frets.map(f => {
+      if (f === null) return 'mute';
+      if (f === 0)   return 'open';
+      return null;
+    });
+  }
 
   // ── 라이브러리 빌드 ──────────────────────────────────────────
   function buildLibrary() {
     const lib = {};
     const ALL_ROOTS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
-    // 1) 패턴 기반 보이싱
-    LIB_PATTERNS.forEach(pat => {
-      for (let r = pat.rRange[0]; r <= pat.rRange[1]; r++) {
-        const frets = evalPat(pat.pattern, r);
+    const STATIC  = window.CHORD_STATIC  || [];
+    const PATTERN = window.CHORD_PATTERN || [];
+
+    // 1) 패턴 보이싱 ─────────────────────────────────────────
+    PATTERN.forEach(pat => {
+      // 입력: 6번줄→1번줄 순 / 캔버스: 1번줄→6번줄 순 → 반전
+      const tokens    = parseTokens(pat.pattern).reverse();
+      const fingerArr = parseFingers(pat.fingers).reverse();
+      const si        = 6 - pat.rootStr;  // 줄 인덱스 (6번줄=0, 5번줄=1, ...)
+      const suffix    = Q_SUFFIX[pat.quality] ?? pat.quality;
+      const nameFn    = pat.name || ((r, flat) => fn(si, r, flat) + suffix);
+      const voicingLabel = `${pat.rootStr}번줄 바레`;
+
+      for (let r = 0; r <= 11; r++) {
+        const frets = evalPat(tokens, r);
         if (frets.some(f => f !== null && f < 0)) continue;
 
-        const sharpName = pat.name(r, false);
-        const flatName  = pat.name(r, true);
-
-        // 근음 (# 기준으로 라이브러리 키 분류)
-        const rootNote = sharpName.match(/^([A-G]#?)/)?.[1] ?? sharpName[0];
+        const sharpName = nameFn(r, false);
+        const flatName  = nameFn(r, true);
+        const rootNote  = sharpName.match(/^([A-G]#?)/)?.[1] ?? sharpName[0];
         if (!lib[rootNote]) lib[rootNote] = [];
 
-        // 바레 객체
-        const barreObj = pat.hasBarre ? { [r]: true } : {};
-
-        // openMute: null=점(dot), 'mute'=×
-        const om = frets.map(f => f === null ? 'mute' : null);
-
-        // 최소 프렛 번호 (2 이상일 때만 drawCanvas에서 표시)
-        const positives = frets.filter(f => f !== null && f > 0);
-        const minFret   = positives.length ? Math.min(...positives) : 0;
+        const barreObj  = pat.barre ? { [r]: true } : {};
+        const openMute  = frets.map(f => f === null ? 'mute' : null);
+        // 패턴 보이싱: fretNumber 직접 지정 시 사용, 생략 시 Math.max(2, r+1)
+        // fretNumber는 슬롯2 위치의 프렛 번호 → 슬롯1 = r이 되려면 r+1 필요
+        const minFret   = pat.fretNumber !== undefined ? pat.fretNumber : Math.max(2, r + 1);
 
         lib[rootNote].push({
           quality:      pat.quality,
-          voicingLabel: pat.label,
+          voicingLabel,
           frets,
-          fingering:    pat.fingering,
+          fingering:    fingerArr,
           barre:        barreObj,
-          openMute:     om,
+          openMute,
           fretNumber:   minFret,
           name:         sharpName,
           flatName,
+          source:       'pattern',
         });
       }
     });
 
-    // 2) 정적 오픈 보이싱
-    LIB_STATIC.forEach(entry => {
-      const rootMatch = entry.root.match(/^([A-G][#b]?)/);
-      const rootNote  = rootMatch ? rootMatch[1] : entry.root[0];
-      if (!lib[rootNote]) lib[rootNote] = [];
-      lib[rootNote].push({
-        quality:      entry.quality,
-        voicingLabel: entry.label,
-        frets:        entry.frets,
-        fingering:    entry.fingering,
-        barre:        {},
-        openMute:     entry.openMute,
-        fretNumber:   0,
-        name:         entry.root,
-        flatName:     entry.root,   // 오픈 코드는 임시로 동일 (추후 개선)
+    // 2) 정적 보이싱 ─────────────────────────────────────────
+    STATIC.forEach(([fretsStr, names, fingersStr, quality, fretNum]) => {
+      // 입력: 6번줄→1번줄 순 / 캔버스: 1번줄→6번줄 순 → 반전
+      const frets   = parseTokens(fretsStr).reverse();
+      const fingers = parseFingers(fingersStr).reverse();
+      const openMute  = deriveOpenMute(frets);
+      const positives = frets.filter(f => f !== null && f > 0);
+      // fretNum 직접 지정 시 사용, 생략 시 최솟값 자동 계산
+      const minFret   = fretNum !== undefined ? fretNum
+                      : (positives.length ? Math.min(...positives) : 0);
+
+      names.forEach(name => {
+        // 코드명 첫 토큰에서 근음 추출 (슬래시 코드는 분자 기준)
+        const rootMatch = name.match(/^([A-G][#b]?)/);
+        const rootNote  = rootMatch ? rootMatch[1] : name[0];
+        // 플랫 근음 → 샵으로 정규화하여 라이브러리 키 분류
+        const rootKey   = FLAT_TO_SHARP[rootNote] || rootNote;
+        if (!lib[rootKey]) lib[rootKey] = [];
+
+        lib[rootKey].push({
+          quality,
+          voicingLabel: 'Open',
+          frets,
+          fingering:    fingers,
+          barre:        {},
+          openMute,
+          fretNumber:   minFret,
+          name,
+          flatName:     name, // 정적 코드는 이름 고정
+          source:       'static',
+        });
       });
     });
 
-    // 3) 각 근음별 정렬: 품질 우선순위 → Open 먼저
+    // 3) 각 근음별 정렬: 1차 품질 우선순위 → 2차 프렛번호 오름차순
     ALL_ROOTS.forEach(root => {
       if (!lib[root]) return;
       lib[root].sort((a, b) => {
@@ -357,10 +170,32 @@
         const av = ai === -1 ? 999 : ai;
         const bv = bi === -1 ? 999 : bi;
         if (av !== bv) return av - bv;
-        if (a.voicingLabel === 'Open' && b.voicingLabel !== 'Open') return -1;
-        if (b.voicingLabel === 'Open' && a.voicingLabel !== 'Open') return 1;
-        return a.name.localeCompare(b.name);
+        if ((a.fretNumber ?? 0) !== (b.fretNumber ?? 0))
+          return (a.fretNumber ?? 0) - (b.fretNumber ?? 0);
+        // 동일 quality + 동일 fretNumber → CHORD_STATIC 우선
+        const sa = a.source === 'static' ? 0 : 1;
+        const sb = b.source === 'static' ? 0 : 1;
+        return sa - sb;
       });
+    });
+
+    // 4) 동일 보이싱(name + frets) 병합 → fingerings[] 배열로 통합
+    // CHORD_STATIC / CHORD_PATTERN 소스 무관하게 동일 fret 위치 + 동일 코드명이면 운지만 다른 것으로 처리
+    ALL_ROOTS.forEach(root => {
+      if (!lib[root]) return;
+      const merged = [];
+      const keyMap = new Map();
+      lib[root].forEach(entry => {
+        const key = entry.name + '§' + entry.frets.join(',');
+        if (keyMap.has(key)) {
+          keyMap.get(key).fingerings.push(entry.fingering);
+        } else {
+          entry.fingerings = [entry.fingering];
+          keyMap.set(key, entry);
+          merged.push(entry);
+        }
+      });
+      lib[root] = merged;
     });
 
     return lib;
@@ -377,6 +212,7 @@
       'sus4':   { triad: 'sus4', seventh: '',    func: '',      tensions: [] },
       '7sus4':  { triad: '',     seventh: '7',   func: 'sus4',  tensions: [] },
       'add9':   { triad: '',     seventh: '',    func: '',      tensions: ['9'] },
+      'sus2':   { triad: 'sus2', seventh: '',    func: '',      tensions: [] },
       'aug':    { triad: 'aug',  seventh: '',    func: '',      tensions: [] },
       'dim':    { triad: 'dim',  seventh: '',    func: '',      tensions: [] },
       'aug7':   { triad: 'aug',  seventh: '7',   func: '',      tensions: [] },

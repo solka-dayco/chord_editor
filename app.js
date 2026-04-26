@@ -859,16 +859,63 @@ canvas.addEventListener('click', e => {
 // ═══════════════════════════════════════════════════════════════
 // PNG 저장
 // ═══════════════════════════════════════════════════════════════
-async function savePNG() {
-  const select = document.getElementById('export-scale');
-  const scale  = parseFloat(select.value);
 
-  await refreshPlanFromDB();
+// 이미지 저장 배율 드롭다운 (에디터/라이브러리 공용)
+let _scaleDropdownMode = 'editor'; // 'editor' | 'library'
+let _scaleDropdownClose = null;
 
-  if (!canUseScale(scale)) {
-    showUpgradeModal('scale_limit');
-    return;
+function showScaleDropdown(anchorEl, mode) {
+  const dd = document.getElementById('scale-dropdown');
+  if (!dd) return;
+  _scaleDropdownMode = mode;
+
+  // 잠금 상태 갱신
+  const max = getPlanLimit('maxScale');
+  dd.querySelectorAll('.scale-dropdown-item').forEach(item => {
+    const v = parseFloat(item.dataset.scale);
+    item.classList.toggle('locked', v > max);
+  });
+
+  // 위치: 버튼 우측 끝 기준 정렬, 버튼 위쪽에 표시
+  const rect = anchorEl.getBoundingClientRect();
+  dd.style.left   = '';
+  dd.style.right  = (window.innerWidth - rect.right) + 'px';
+  dd.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+  dd.style.top    = '';
+  dd.classList.add('open');
+
+  // 외부 클릭 시 닫기
+  if (_scaleDropdownClose) document.removeEventListener('pointerdown', _scaleDropdownClose);
+  _scaleDropdownClose = (e) => {
+    if (!dd.contains(e.target) && e.target !== anchorEl) closeScaleDropdown();
+  };
+  setTimeout(() => document.addEventListener('pointerdown', _scaleDropdownClose), 0);
+}
+
+function closeScaleDropdown() {
+  const dd = document.getElementById('scale-dropdown');
+  if (dd) dd.classList.remove('open');
+  if (_scaleDropdownClose) {
+    document.removeEventListener('pointerdown', _scaleDropdownClose);
+    _scaleDropdownClose = null;
   }
+}
+
+async function onScaleSelect(el) {
+  const scale = parseFloat(el.dataset.scale);
+  if (isNaN(scale)) return;
+  closeScaleDropdown();
+  if (el.classList.contains('locked')) { showUpgradeModal('scale_limit'); return; }
+  if (_scaleDropdownMode === 'library') {
+    await _doExportLibChordImage(scale);
+  } else {
+    await _doSavePNG(scale);
+  }
+}
+
+async function _doSavePNG(scale) {
+  await refreshPlanFromDB();
+  if (!canUseScale(scale)) { showUpgradeModal('scale_limit'); return; }
 
   const exp = document.createElement('canvas');
   exp.width  = Math.round(BASE_W * scale);
@@ -877,29 +924,25 @@ async function savePNG() {
   ec.scale(scale, scale);
   drawCanvas(ec, 1);
 
-  const base64  = exp.toDataURL('image/png').split(',')[1];
+  const base64   = exp.toDataURL('image/png').split(',')[1];
   const fileName = buildChordName() + '_chord.png';
 
   if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     try {
       const SaveImage = window.Capacitor.Plugins.SaveImage;
-      const safeName = fileName.replace(/[^\w.\-]/g, '_');
-      // 네이티브 플러그인으로 MediaStore에 직접 저장 (권한 불필요, Android 10+)
-      await SaveImage.saveToGallery({ base64, fileName: safeName });
+      await SaveImage.saveToGallery({ base64, fileName: fileName.replace(/[^\w.\-]/g, '_') });
       showSaveToast();
-    } catch (e) {
-      const msg = e?.message || e?.errorMessage || JSON.stringify(e);
-      console.error('저장 실패:', e);
-    }
+    } catch (e) { console.error('저장 실패:', e); }
   } else {
     const link = document.createElement('a');
     link.download = fileName;
     link.href = exp.toDataURL('image/png');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 }
+
+// 드롭다운 진입점 (에디터 저장 버튼 → showScaleDropdown 호출로 대체)
+async function savePNG() { /* 직접 호출 시 드롭다운 없이 scale=1 */ await _doSavePNG(1); }
 
 // ═══════════════════════════════════════════════════════════════
 // 리사이즈
@@ -1804,15 +1847,10 @@ async function restorePurchases() {
 // ── 배율 옵션 잠금 제어 ─────────────────────────────────────────
 function updateExportScaleOptions() {
   const max = getPlanLimit('maxScale');
-  const select = document.getElementById('export-scale');
-  if (!select) return;
-  select.querySelectorAll('option').forEach(opt => {
-    const v = parseFloat(opt.value);
-    const locked = v > max;
-    opt.textContent = opt.textContent.replace(' 🔒', '');
-    opt.style.color = locked ? '#aaa' : '';
-    // 현재 선택된 값이 잠기면 x1로 리셋
-    if (locked && select.value === opt.value) select.value = '1';
+  const dd = document.getElementById('scale-dropdown');
+  if (!dd) return;
+  dd.querySelectorAll('.scale-dropdown-item').forEach(item => {
+    item.classList.toggle('locked', parseFloat(item.dataset.scale) > max);
   });
 }
 
@@ -1928,6 +1966,8 @@ function navigateTo(view, projectId) {
     if (currentLinesEl) saveAllLines(currentProjectId, currentLinesEl);
   }
 
+  // 메인 영역(에디터+프로젝트)과 라이브러리 뷰는 완전히 분리
+  document.getElementById('main-area')?.classList.toggle('hidden', view === 'library');
   document.getElementById('view-editor').classList.toggle('hidden', view !== 'editor');
   document.getElementById('view-project').classList.toggle('hidden', view !== 'project');
   document.getElementById('view-library')?.classList.toggle('hidden', view !== 'library');
@@ -1935,8 +1975,18 @@ function navigateTo(view, projectId) {
 
   if (view === 'library') {
     closeSidebar();
+    // 라이브러리 페이지는 세로 고정
+    if (isMobileOrTablet() && screen.orientation?.lock) {
+      screen.orientation.lock('portrait').catch(() => {});
+    }
+    // 샵/플랫 버튼 현재 전역 상태 반영
+    document.getElementById('lib-acc-sharp')?.classList.toggle('active', accidental === 'sharp');
+    document.getElementById('lib-acc-flat')?.classList.toggle('active', accidental === 'flat');
     renderLibRootTabs();
     renderLibCards(_libRoot);
+    // 첫 번째 엔트리 자동 선택 → #lib-canvas 초기 표시
+    const _initEntries = (window.chordsLibrary || {})[_libRoot] || [];
+    if (_initEntries.length > 0) selectLibEntry(0);
     return;
   }
 
@@ -1964,8 +2014,9 @@ function navigateTo(view, projectId) {
 // 사이드바
 // ═══════════════════════════════════════════════════════════════
 function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const backdrop = document.getElementById('sidebar-backdrop');
+  const sidebar   = document.getElementById('sidebar');
+  const backdrop  = document.getElementById('sidebar-backdrop');
+  const hamburger = document.getElementById('hamburger');
   const isOpen = sidebar.classList.contains('open');
   if (isOpen) {
     closeSidebar();
@@ -1973,15 +2024,18 @@ function toggleSidebar() {
     sidebar.classList.add('open');
     backdrop.classList.remove('hidden');
     backdrop.classList.add('visible');
+    hamburger?.classList.add('hidden');   // 사이드바 열릴 때 햄버거 숨김
   }
 }
 
 function closeSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  const backdrop = document.getElementById('sidebar-backdrop');
+  const sidebar   = document.getElementById('sidebar');
+  const backdrop  = document.getElementById('sidebar-backdrop');
+  const hamburger = document.getElementById('hamburger');
   sidebar.classList.remove('open');
   backdrop.classList.remove('visible');
   backdrop.classList.add('hidden');
+  hamburger?.classList.remove('hidden'); // 사이드바 닫힐 때 햄버거 복원
 }
 
 function renderSidebar() {
@@ -4655,35 +4709,52 @@ window._handleShareImport = async function(rawCode) {
 // ═══════════════════════════════════════════════════════════════
 // 코드 라이브러리
 // ═══════════════════════════════════════════════════════════════
-let _libRoot      = 'C';
-let _libEntry     = null;
-let _libFingerMode = true;
-let _libCanvas    = null;
-let _libCtx       = null;
-const LIB_VIEWER_W = 280;
+let _libRoot        = 'C';
+let _libEntry       = null;
+let _libFingerMode  = true;
+let _libFingeringIdx = 0;  // 현재 선택된 운지 인덱스
+let _libCanvas      = null;
+let _libCtx         = null;
+let _libCurrentIdx  = -1;
+let _voicingModalChord = null; // 현재 보이싱 모달에 표시 중인 코드명 (sharp 기준)
+const LIB_VIEWER_W = 1120;  // 물리 픽셀 4배 (CSS 표시 크기는 style.css에서 320px 고정)
 const LIB_VIEWER_RATIO = LIB_VIEWER_W / BASE_W;
 const LIB_MINI_W   = 120;
 const LIB_MINI_RATIO = LIB_MINI_W / BASE_W;
 
 function openLibrary() {
+  history.pushState({ view: 'library' }, '');
   navigateTo('library');
 }
+
+function closeLibrary() {
+  navigateTo('editor');
+}
+
+// 브라우저/안드로이드 뒤로가기 → 라이브러리에서 메인으로 복귀
+window.addEventListener('popstate', () => {
+  const libEl = document.getElementById('view-library');
+  if (libEl && !libEl.classList.contains('hidden')) {
+    navigateTo('editor');
+  }
+});
 
 function renderLibRootTabs() {
   const roots   = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const flatMap  = { 'C#':'Db','D#':'Eb','F#':'Gb','G#':'Ab','A#':'Bb' };
+  const useFlat  = accidental === 'flat';
   const container = document.getElementById('lib-root-tabs');
   if (!container) return;
   container.innerHTML = roots.map(r => {
-    const label = flatMap[r]
-      ? `${r}<span class="lib-tab-flat">${flatMap[r]}</span>`
-      : r;
-    return `<button class="lib-root-tab${r === _libRoot ? ' active' : ''}"
+    // 샵/플랫 모드에 따라 하나의 이름만 표시
+    const label = useFlat ? (flatMap[r] || r) : r;
+    return `<button class="lib-root-item${r === _libRoot ? ' active' : ''}"
                     onclick="selectLibRoot('${r}')">${label}</button>`;
   }).join('');
 }
 
 function selectLibRoot(root) {
+  closeVoicingModal();
   _libRoot = root;
   renderLibRootTabs();
   renderLibCards(root);
@@ -4699,21 +4770,42 @@ function renderLibCards(root) {
     return;
   }
 
+  // 코드명 기준 그룹화: sharpName → 해당 그룹의 엔트리 인덱스 배열
   const useFlat = accidental === 'flat';
-  container.innerHTML = entries.map((entry, i) => {
-    const dispName = useFlat ? entry.flatName : entry.name;
-    return `<div class="lib-card${_libEntry === entry ? ' active' : ''}"
-                 onclick="selectLibEntry(${i})">
-              <canvas class="lib-card-canvas" data-idx="${i}"
-                      width="${LIB_MINI_W}"
-                      height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
-              <div class="lib-card-name">${dispName}</div>
-            </div>`;
-  }).join('');
+  const groups  = new Map(); // sharpName → [idx, ...]
+  entries.forEach((e, i) => {
+    if (!groups.has(e.name)) groups.set(e.name, []);
+    groups.get(e.name).push(i);
+  });
 
-  entries.forEach((entry, i) => {
-    const c = container.querySelector(`[data-idx="${i}"]`);
-    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, entry, '');
+  // 현재 선택 엔트리가 속한 그룹명
+  const activeGroupName = _libEntry ? _libEntry.name : null;
+
+  const reps = []; // 대표 엔트리 목록 (순서 유지)
+  let html   = '';
+  let gi     = 0;
+  for (const [sharpName, idxList] of groups) {
+    const rep      = entries[idxList[0]];
+    const dispName = useFlat ? rep.flatName : rep.name;
+    const isActive = sharpName === activeGroupName;
+    const multi    = idxList.length > 1;
+    html += `<div class="lib-card${isActive ? ' active' : ''}${multi ? ' lib-card-multi' : ''}"
+                  onclick="onLibCardClick(event,'${sharpName.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">
+               <canvas class="lib-card-canvas" data-gidx="${gi}"
+                       width="${LIB_MINI_W}"
+                       height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
+               <div class="lib-card-name">${dispName}</div>
+               ${multi ? `<div class="lib-card-badge">${idxList.length}</div>` : ''}
+             </div>`;
+    reps.push(rep);
+    gi++;
+  }
+  container.innerHTML = html;
+
+  // 미니 캔버스 렌더
+  reps.forEach((rep, i) => {
+    const c = container.querySelectorAll('.lib-card-canvas')[i];
+    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, rep, '');
   });
 }
 
@@ -4721,17 +4813,14 @@ function selectLibEntry(idx) {
   const entries = (window.chordsLibrary || {})[_libRoot] || [];
   _libEntry = entries[idx];
   if (!_libEntry) return;
-
-  const useFlat  = accidental === 'flat';
-  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
-  const nameEl   = document.getElementById('lib-viewer-name');
-  const typeEl   = document.getElementById('lib-viewer-type');
-  if (nameEl) nameEl.textContent = dispName;
-  if (typeEl) typeEl.textContent = _libEntry.voicingLabel || '';
+  _libCurrentIdx = idx;
+  _libFingeringIdx = 0;
 
   _ensureLibCanvas();
   drawLibViewerCanvas();
-  renderLibCards(_libRoot); // 선택 상태 재렌더
+  _updateFingeringNav();
+  renderLibCards(_libRoot);          // 메인 그리드 선택 상태 재렌더
+  _updateVoicingGridActive(idx);     // 모달 그리드 active 상태 갱신
 }
 
 function _ensureLibCanvas() {
@@ -4750,30 +4839,172 @@ function drawLibViewerCanvas() {
   if (!_libCanvas || !_libEntry) return;
   const useFlat  = accidental === 'flat';
   const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
-  _drawLibCanvas(_libCanvas, LIB_VIEWER_RATIO, _libEntry,
-                 _libFingerMode ? dispName : dispName);
+  _drawLibCanvas(_libCanvas, LIB_VIEWER_RATIO, _libEntry, dispName, _libFingeringIdx);
 }
 
 // 공통 캔버스 렌더 (viewer / mini card 공용)
-function _drawLibCanvas(canvas, ratio, entry, nameOverride) {
+// fingeringIdx: 사용할 운지 인덱스 (미지정 시 0 = 대표 운지)
+function _drawLibCanvas(canvas, ratio, entry, nameOverride, fingeringIdx = 0) {
   const frets     = entry.frets;
-  const fingering = entry.fingering;
+  const fingering = (entry.fingerings?.[fingeringIdx]) ?? entry.fingerings?.[0] ?? entry.fingering;
+  // 절대 프렛 → 슬롯 번호 변환
+  // fretNumber는 슬롯2의 프렛 번호 → 슬롯1 = fretNumber-1 → offset = fretNumber-2
+  const fretOffset = entry.fretNumber >= 2 ? entry.fretNumber - 2 : 0;
 
   const dotsArr = frets
     .map((f, s) => f !== null && f > 0
-      ? { s, f, n: _libFingerMode ? (fingering?.[s] ?? 0) : 0 }
+      ? { s, f: f - fretOffset, n: _libFingerMode ? (fingering?.[s] ?? 0) : 0 }
       : null)
     .filter(Boolean);
 
-  drawCanvas(canvas, ratio, {
+  // barre 키도 절대 프렛 → 슬롯 번호로 정규화
+  const normBarre = {};
+  Object.entries(entry.barre || {}).forEach(([f, v]) => {
+    normBarre[Number(f) - fretOffset] = v;
+  });
+
+  drawCanvas(canvas.getContext('2d'), ratio, {
     root: '', triad: '', seventh: '', func: '', tensions: [], bass: '',
     nameOverride,
-    dots:         dotsArr,
-    openMute:     entry.openMute,
-    barre:        entry.barre,
-    fretNumber:   entry.fretNumber,
+    dots:          dotsArr,
+    openMute:      entry.openMute,
+    barre:         normBarre,
+    fretNumber:    entry.fretNumber,
     fingerNumMode: _libFingerMode,
   });
+}
+
+// 운지 내비게이션
+function _updateFingeringNav() {
+  const total = _libEntry?.fingerings?.length ?? 1;
+  const nav   = document.getElementById('lib-fingering-nav');
+  if (!nav) return;
+  nav.style.display = total > 1 ? 'flex' : 'none';
+  const label = nav.querySelector('.lib-fingering-label');
+  if (label) label.textContent = `${_libFingeringIdx + 1} / ${total}`;
+}
+
+function prevLibFingering() {
+  const total = _libEntry?.fingerings?.length ?? 1;
+  _libFingeringIdx = (_libFingeringIdx - 1 + total) % total;
+  drawLibViewerCanvas();
+  _updateFingeringNav();
+}
+
+function nextLibFingering() {
+  const total = _libEntry?.fingerings?.length ?? 1;
+  _libFingeringIdx = (_libFingeringIdx + 1) % total;
+  drawLibViewerCanvas();
+  _updateFingeringNav();
+}
+
+// ── 보이싱 피커 모달 ────────────────────────────────────────────
+
+// 카드 그리드 클릭 진입점
+// - 보이싱 1개 → 직접 선택
+// - 보이싱 복수 → 탭 애니메이션 후 모달 열기
+function onLibCardClick(event, sharpName) {
+  const entries = (window.chordsLibrary || {})[_libRoot] || [];
+  const idxList = entries.reduce((acc, e, i) => (e.name === sharpName ? [...acc, i] : acc), []);
+  if (!idxList.length) return;
+
+  if (idxList.length === 1) {
+    selectLibEntry(idxList[0]);
+    return;
+  }
+
+  // 탭 피드백 애니메이션
+  const cardEl = event.currentTarget;
+  cardEl.classList.add('lib-card-clicked');
+  setTimeout(() => cardEl.classList.remove('lib-card-clicked'), 300);
+
+  openVoicingModal(sharpName, cardEl);
+}
+
+// 보이싱 모달 열기
+function openVoicingModal(sharpName, cardEl) {
+  const modal   = document.getElementById('lib-voicing-modal');
+  const overlay = document.getElementById('lib-voicing-overlay');
+  if (!modal) return;
+
+  // 클릭 카드 중심을 transform-origin으로 설정 (lib-cards-area 기준 좌표)
+  const areaEl = document.querySelector('.lib-cards-area');
+  if (areaEl && cardEl) {
+    const ar = areaEl.getBoundingClientRect();
+    const cr = cardEl.getBoundingClientRect();
+    const ox = cr.left + cr.width  / 2 - ar.left;
+    const oy = cr.top  + cr.height / 2 - ar.top;
+    modal.style.transformOrigin = `${ox}px ${oy}px`;
+  }
+
+  _voicingModalChord = sharpName;
+  _renderVoicingGrid(sharpName);
+
+  overlay?.classList.add('open');
+  // 두 프레임 지연으로 transition 확실히 발동
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    modal.classList.add('open');
+  }));
+}
+
+// 보이싱 모달 닫기
+function closeVoicingModal() {
+  document.getElementById('lib-voicing-modal')?.classList.remove('open');
+  document.getElementById('lib-voicing-overlay')?.classList.remove('open');
+  _voicingModalChord = null;
+}
+
+// 모달 내 보이싱 그리드 렌더링
+function _renderVoicingGrid(sharpName) {
+  const grid = document.getElementById('lib-voicing-grid');
+  if (!grid) return;
+  const allEntries = (window.chordsLibrary || {})[_libRoot] || [];
+  const useFlat    = accidental === 'flat';
+  const filtered   = allEntries
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => e.name === sharpName);
+
+  grid.innerHTML = filtered.map(({ e, i }) => {
+    const dispName = useFlat ? e.flatName : e.name;
+    return `<div class="lib-card${_libEntry === e ? ' active' : ''}"
+                 onclick="event.stopPropagation(); selectLibEntry(${i});">
+               <canvas class="lib-card-canvas" data-vidx="${i}"
+                       width="${LIB_MINI_W}"
+                       height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
+               <div class="lib-card-name">${dispName}</div>
+             </div>`;
+  }).join('');
+
+  filtered.forEach(({ e, i }) => {
+    const c = grid.querySelector(`[data-vidx="${i}"]`);
+    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, e, '');
+  });
+}
+
+// 보이싱 모달이 열려있을 때 선택된 카드 active 상태만 갱신
+function _updateVoicingGridActive(selectedIdx) {
+  const grid = document.getElementById('lib-voicing-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.lib-card').forEach(el => {
+    const canvas = el.querySelector('.lib-card-canvas');
+    if (!canvas) return;
+    el.classList.toggle('active', parseInt(canvas.dataset.vidx, 10) === selectedIdx);
+  });
+}
+
+function setLibAccidental(type) {
+  // 전역 accidental 변경 (에디터와 공유)
+  setAccidental(type);
+  // 라이브러리 내 샵/플랫 버튼 active 동기화
+  document.getElementById('lib-acc-sharp')?.classList.toggle('active', type === 'sharp');
+  document.getElementById('lib-acc-flat')?.classList.toggle('active', type === 'flat');
+  // 근음 목록 + 카드 이름 재렌더
+  renderLibRootTabs();
+  renderLibCards(_libRoot);
+  // 보이싱 모달이 열려있으면 모달 내 코드명도 재렌더
+  if (_voicingModalChord) _renderVoicingGrid(_voicingModalChord);
+  // 뷰어 캔버스 코드명 재렌더
+  drawLibViewerCanvas();
 }
 
 function toggleLibFingerNum() {
@@ -4790,75 +5021,130 @@ function libPlayChord() {
   playChord({ dots: _libEntry.frets.map((f, s) => f !== null && f > 0 ? {s, f} : null).filter(Boolean), openMute: _libEntry.openMute });
 }
 
-function onLibSearch(query) {
-  const q = (query || '').trim().toLowerCase();
-  const container = document.getElementById('lib-cards');
-  if (!container) return;
+// 검색 매칭: 근음은 대소문자 무시, quality는 대소문자 구분
+function _libMatch(name, q) {
+  // 쿼리가 근음([A-G][#b]?)으로 시작하면 분리 매칭
+  const m = q.match(/^([A-Ga-g][#b]?)(.*)/);
+  if (!m) return name.includes(q); // 근음 없이 quality만 입력 → 전체 대소문자 구분 검색
+  const qRoot   = m[1][0].toUpperCase() + m[1].slice(1); // 근음 첫 글자만 대문자 정규화
+  const qSuffix = m[2];                                   // quality 부분 (대소문자 구분)
+  const nm = name.match(/^([A-G][#b]?)(.*)/);
+  if (!nm) return false;
+  return nm[1] === qRoot && nm[2].includes(qSuffix);
+}
 
-  if (!q) { renderLibCards(_libRoot); return; }
+let _libSearchResults = [];
+
+function onLibSearch(query) {
+  const q = (query || '').trim();
+  if (!q) { _libSearchResults = []; return; }
 
   const lib = window.chordsLibrary || {};
-  const results = [];
+  _libSearchResults = [];
   for (const root of Object.keys(lib)) {
     for (const entry of lib[root]) {
-      if (entry.name.toLowerCase().includes(q) ||
-          entry.flatName.toLowerCase().includes(q)) {
-        results.push(entry);
+      if (_libMatch(entry.name, q) || _libMatch(entry.flatName, q)) {
+        _libSearchResults.push(entry);
       }
     }
   }
+}
 
-  if (!results.length) {
-    container.innerHTML = '<div class="lib-empty">검색 결과 없음</div>';
-    return;
+function showLibSearchModal() {
+  const modal = document.getElementById('lib-search-modal');
+  const container = document.getElementById('lib-search-cards');
+  const titleEl = document.getElementById('lib-search-modal-title');
+  if (!modal || !container) return;
+
+  // 모달 상단 위치: lib-action-bar 상단에서 시작
+  const actionBar = document.querySelector('#view-library .lib-action-bar');
+  if (actionBar) {
+    const top = actionBar.offsetTop;
+    modal.style.top = top + 'px';
+    modal.style.height = '';  // CSS calc 대신 top으로 제어
   }
 
-  const useFlat = accidental === 'flat';
-  container.innerHTML = results.map((entry, i) => {
-    const dispName = useFlat ? entry.flatName : entry.name;
-    return `<div class="lib-card${_libEntry === entry ? ' active' : ''}"
-                 onclick="selectLibSearchResult(${i})">
-              <canvas class="lib-card-canvas" data-sidx="${i}"
-                      width="${LIB_MINI_W}"
-                      height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
-              <div class="lib-card-name">${dispName}</div>
-            </div>`;
-  }).join('');
-  container._searchResults = results;
-  results.forEach((entry, i) => {
-    const c = container.querySelector(`[data-sidx="${i}"]`);
-    if (c) _drawLibCanvas(c, LIB_MINI_RATIO, entry, '');
-  });
+  const q = (document.getElementById('lib-search')?.value || '').trim();
+  titleEl.textContent = _libSearchResults.length
+    ? `"${q}" 검색 결과 ${_libSearchResults.length}건`
+    : `"${q}" 검색 결과 없음`;
+
+  if (!_libSearchResults.length) {
+    container.innerHTML = '<div class="lib-empty">검색 결과 없음</div>';
+  } else {
+    const useFlat = accidental === 'flat';
+    container.innerHTML = _libSearchResults.map((entry, i) => {
+      const dispName = useFlat ? entry.flatName : entry.name;
+      return `<div class="lib-card${_libEntry === entry ? ' active' : ''}"
+                   onclick="selectLibSearchResult(${i})">
+                <canvas class="lib-card-canvas" data-sidx="${i}"
+                        width="${LIB_MINI_W}"
+                        height="${Math.round(BASE_H * LIB_MINI_RATIO)}"></canvas>
+                <div class="lib-card-name">${dispName}</div>
+              </div>`;
+    }).join('');
+    _libSearchResults.forEach((entry, i) => {
+      const c = container.querySelector(`[data-sidx="${i}"]`);
+      if (c) _drawLibCanvas(c, LIB_MINI_RATIO, entry, '');
+    });
+  }
+
+  modal.classList.add('open');
+}
+
+function closeLibSearchModal() {
+  const modal = document.getElementById('lib-search-modal');
+  if (modal) modal.classList.remove('open');
+  const input = document.getElementById('lib-search');
+  if (input) { input.value = ''; _libSearchResults = []; }
 }
 
 function selectLibSearchResult(idx) {
-  const container = document.getElementById('lib-cards');
-  const results = container?._searchResults;
-  if (!results) return;
-  _libEntry = results[idx];
-  if (!_libEntry) return;
-  const useFlat  = accidental === 'flat';
-  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
-  const nameEl   = document.getElementById('lib-viewer-name');
-  const typeEl   = document.getElementById('lib-viewer-type');
-  if (nameEl) nameEl.textContent = dispName;
-  if (typeEl) typeEl.textContent = _libEntry.voicingLabel || '';
+  const entry = _libSearchResults[idx];
+  if (!entry) return;
+  _libEntry = entry;
+  _libCurrentIdx = idx;
+  _libFingeringIdx = 0;
   _ensureLibCanvas();
   drawLibViewerCanvas();
+  _updateFingeringNav();
+  // 모달 active 상태 갱신
+  const container = document.getElementById('lib-search-cards');
+  container?.querySelectorAll('.lib-card').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
 }
 
-function exportLibChordImage() {
+// 라이브러리 저장 버튼 → showScaleDropdown 으로 진입
+async function _doExportLibChordImage(scale) {
   if (!_libEntry) return;
-  _ensureLibCanvas();
-  drawLibViewerCanvas();
-  _libCanvas.toBlob(blob => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    const useFlat = accidental === 'flat';
-    const nm = (useFlat ? _libEntry.flatName : _libEntry.name).replace(/\//g, '_');
-    a.download = nm + '.png';
-    a.click();
-  });
+
+  await refreshPlanFromDB();
+  if (!canUseScale(scale)) { showUpgradeModal('scale_limit'); return; }
+
+  const useFlat  = accidental === 'flat';
+  const dispName = useFlat ? _libEntry.flatName : _libEntry.name;
+  const fileName = dispName.replace(/\//g, '_') + '_chord.png';
+
+  const exp = document.createElement('canvas');
+  exp.width  = Math.round(BASE_W * scale);
+  exp.height = Math.round(BASE_H * scale);
+  _drawLibCanvas(exp, scale, _libEntry, dispName);
+
+  const base64 = exp.toDataURL('image/png').split(',')[1];
+
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    try {
+      const SaveImage = window.Capacitor.Plugins.SaveImage;
+      await SaveImage.saveToGallery({ base64, fileName: fileName.replace(/[^\w.\-]/g, '_') });
+      showSaveToast();
+    } catch (e) { console.error('저장 실패:', e); }
+  } else {
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = exp.toDataURL('image/png');
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  }
 }
 
 function importLibChordToProject() {
@@ -4868,9 +5154,14 @@ function importLibChordToProject() {
   const dispName = useFlat ? entry.flatName : entry.name;
 
   // 에디터 상태에 라이브러리 코드 로드
+  // 절대 프렛 → 슬롯 번호 변환 (_drawLibCanvas와 동일 로직)
+  const fretOffset = entry.fretNumber >= 2 ? entry.fretNumber - 2 : 0;
+
+  const activeFingering = (entry.fingerings?.[_libFingeringIdx]) ?? entry.fingerings?.[0] ?? entry.fingering;
+
   dots = entry.frets
     .map((f, s) => (f !== null && f > 0)
-      ? { s, f, n: _libFingerMode ? (entry.fingering?.[s] ?? 0) : 0 }
+      ? { s, f: f - fretOffset, n: _libFingerMode ? (activeFingering?.[s] ?? 0) : 0 }
       : null)
     .filter(Boolean);
 
@@ -4881,7 +5172,7 @@ function importLibChordToProject() {
 
   barreActive = {};
   Object.entries(entry.barre).forEach(([f, v]) => {
-    barreActive[parseInt(f)] = v;
+    barreActive[parseInt(f) - fretOffset] = v;
   });
 
   currentFretNumber = entry.fretNumber >= 2 ? entry.fretNumber : 2;

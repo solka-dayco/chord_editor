@@ -18,6 +18,8 @@ Chords_editor/
 ├── app.js            # 메인 로직 전체 (~2900줄)
 ├── index.html        # 단일 HTML 파일
 ├── style.css         # 전체 스타일 (~1360줄)
+├── chord-voicings.js # 보이싱 데이터 원본 (개발자 직접 편집 — Claude 수정 금지)
+├── chords-library.js # 보이싱 파서 + 라이브러리 빌더
 ├── image/            # 핑거링 이미지 (root, common, barre, open, mute)
 ├── www/              # 빌드 출력 (app.js / index.html / style.css 복사본)
 ├── android/          # Android Studio 프로젝트
@@ -116,7 +118,51 @@ cp style.css  www/style.css  && cp style.css  android/app/src/main/assets/public
 - 즐겨찾기(핀) / 최근 프로젝트 사이드바
 - LocalStorage 기반 저장
 
-### 3. 모바일(Android) 특화
+### 3. 코드 라이브러리 (라이브러리 뷰)
+
+화성학 이론에 기반한 잘 알려진 기타 코드 보이싱을 사전 형식으로 제공하는 읽기 전용 탐색 뷰.
+
+**핵심 컨셉**
+- 사이드바 상단의 "라이브러리" 버튼으로 진입 (에디터/프로젝트 뷰와 독립적인 세 번째 뷰)
+- 12개 근음 탭 → 해당 근음의 코드 카드 그리드 표시
+- 코드 카드 클릭 → 우측 뷰어에 큰 코드표 표시 (손가락 번호·재생·이미지 저장·프로젝트 가져오기)
+- 검색바: 코드명으로 필터링
+- "프로젝트로 가져오기"로 에디터에 코드 로드 후 편집 가능
+
+**데이터 파일 구조**
+- `chord-voicings.js` : 보이싱 데이터 원본 — 개발자 직접 편집, **Claude 수정 금지**
+  - `window.CHORD_STATIC` : 정적 보이싱 (오픈코드·전위코드 등)
+  - `window.CHORD_PATTERN` : 패턴 보이싱 (E형/A형 바레 등, 12근음 자동 생성)
+- `chords-library.js` : 파서 + 빌더
+  - `window.CHORD_STATIC` / `window.CHORD_PATTERN` 을 읽어 `window.chordsLibrary` 빌드
+  - `window.chordNoteName(si, fret, flat)` 전역 노출 — `chord-voicings.js`의 `name` 함수에서 사용
+  - `window.chordsLibrary` : 근음별로 정렬된 코드 엔트리 딕셔너리 (빌드 결과물)
+- 로드 순서: `chord-voicings.js` → `chords-library.js` (index.html script 태그 순서 고정)
+
+**캔버스 렌더링 (`_drawLibCanvas`)**
+- 라이브러리 엔트리의 frets 배열은 **절대 프렛값** (예: G 바레 = 3,4,5)
+- `drawCanvas`는 **슬롯 번호(1~4)** 기준 → 변환 필수
+  - `fretOffset = fretNumber - 2`
+  - `슬롯 번호 = 절대프렛 - fretOffset`
+  - barre 키도 동일하게 정규화
+- CHORD_PATTERN fretNumber 자동 계산: `Math.max(2, r + 1)` (슬롯1 = 바레 위치)
+
+**품질(quality) 정렬 우선순위**
+M → m → M7 → 7 → m7 → sus4 → 7sus4 → add9 → sus2 → aug → dim → aug7 → dim7 → m7(b5) → 6 → m6
+
+**UI 규칙**
+- 카드 및 근음 탭: `border-radius: 0` (모서리 없음)
+- flat/sharp 모드(`accidental` 전역 변수)에 따라 코드명 표기 자동 전환
+- 코드명은 캔버스 내부에 렌더링 (`nameOverride` 파라미터) — 별도 DOM 엘리먼트 없음
+
+**동기화 주의**
+- `chord-voicings.js`, `chords-library.js` 모두 android assets 수동 복사 필수:
+  ```bash
+  cp chord-voicings.js android/app/src/main/assets/public/chord-voicings.js
+  cp chords-library.js android/app/src/main/assets/public/chords-library.js
+  ```
+
+### 4. 모바일(Android) 특화
 - 터치 기반 thumb 드래그: 이동 8px 초과 시 드래그 모드, 짧은 탭은 편집 모달
 - 코드 슬롯/썸네일 삭제: `@media (pointer: coarse)` 에서 항상 삭제 버튼 표시
 - 데스크탑 삭제: hover 시 삭제 버튼 표시 (`@media (hover: hover) and (pointer: fine)`)
@@ -211,6 +257,42 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 - 데스크탑 삭제 버튼: `@media (hover: hover) and (pointer: fine)` → hover 시 표시
 - 반응형 분기: 768px (태블릿), 480px (모바일), 가로 모드 별도 처리
 
+## 애니메이션 표준값 (전역)
+
+슬라이드·모달·패널 등 **UI 요소의 등장/퇴장 트랜지션**에 아래 값을 전역 표준으로 사용한다.
+
+```css
+transition: transform .55s cubic-bezier(0.22, 1, 0.36, 1);
+```
+
+- **재생 시간:** `0.55s`
+- **이징:** `cubic-bezier(0.22, 1, 0.36, 1)` — 빠르게 진입 후 끝에서 부드럽게 감속 (ease-out 계열)
+- 기준 사례: `#lib-search-modal` 슬라이드 업 애니메이션
+- **열기와 닫기는 항상 동일한 속도감·이징으로 설정할 것** (닫기만 빠르거나 즉시 사라지는 것 금지)
+
+### 구현 주의사항
+- `.hidden` 클래스(`display: none`)는 CSS 트랜지션을 즉시 차단함 → 슬라이드/페이드 애니메이션에 사용 금지
+- 대신 전용 `.open` 클래스로 열기/닫기를 제어하고, 기본 상태(`transform: translateY(100%)` 등)를 off-screen으로 유지
+- `pointer-events: none` / `pointer-events: auto`로 비활성/활성 전환
+
+```css
+/* 올바른 패턴 */
+.my-modal {
+  transform: translateY(100%);
+  transition: transform .55s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+.my-modal.open {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+```
+
+단순 hover/색상 전환(`.15s ease` 등)은 이 표준 적용 대상이 아님.
+
+## TODO
+- [ ] 기존 애니메이션(모달 오버레이, 사이드바, 뷰 전환 등) 트랜지션을 표준값 `.55s cubic-bezier(0.22, 1, 0.36, 1)`으로 교체
+
 
 # 모바일 webview 텍스트 처리방식
 
@@ -228,6 +310,100 @@ let currentColCount = 8;        // 슬롯 열 수 (4 or 8)
 - 둘 다 동일하게 plain text만 들어가야 함
 
 # 쓰레기 코드가 최대한 남아있지 않도록 수정할 때 삭제할 것, 교체할 것을 정확히 구분하고 검토할 것.
+
+# chord-voicings.js 수정 금지
+- 개발자가 직접 편집하는 보이싱 데이터 파일이므로 Claude가 임의로 수정해서는 안 됨.
+- 포맷 변경(chords-library.js 파서)이나 동기화 작업만 허용.
+
+# 보이싱데이터 표준 포맷 (chord-voicings.js 기준)
+
+앞으로 모든 보이싱 데이터는 아래 포맷을 표준으로 삼는다.
+
+## 공통 규칙
+- 줄 순서: **6번줄(저음 E) → 1번줄(고음 e)** (공백 구분 문자열)
+- frets 토큰: `x`=뮤트(×) | `0`=개방(○) | 숫자=프렛 | (패턴 한정) `r`=근음프렛 | `r+N`/`r-N`=상대프렛
+- fingers 토큰: `x`=없음 | `1~4`=손가락번호 | `T`=엄지
+- 파싱 시 배열 반전 적용 (6번줄→1번줄 입력 → 캔버스는 1번줄→6번줄 순으로 그림)
+
+## CHORD_STATIC — 정적 보이싱 (고정 오픈코드·전위코드 등)
+
+```js
+// 형식: [ frets, names, fingers, quality, fretNumber? ]
+['x 3 2 0 1 0', ['C'],         'x 3 2 x 1 x', 'M',  2]
+['x 0 2 2 1 0', ['Am', 'C/A'], 'x x 2 3 1 x', 'm',  2]
+//               ↑ names 복수 → 동일 보이싱에서 독립 엔트리 각각 생성
+```
+
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| frets | ✅ | 프렛 위치 문자열 |
+| names | ✅ | 코드명 배열 (복수 가능) |
+| fingers | ✅ | 손가락 번호 문자열 |
+| quality | ✅ | 정렬 기준 태그 |
+| fretNumber | ☐ | 캔버스 표시 프렛 번호 (생략 시 최솟값 자동 계산) |
+
+quality 태그 목록:
+`'M'` `'m'` `'M7'` `'7'` `'m7'` `'sus4'` `'7sus4'` `'add9'` `'sus2'`
+`'aug'` `'dim'` `'aug7'` `'dim7'` `'m7(b5)'` `'6'` `'m6'` `'slash'` `'hybrid'`
+
+## CHORD_PATTERN — 패턴 보이싱 (바레 코드 등 근음 위치가 변하는 보이싱)
+
+```js
+// 형식: { pattern, rootStr, fingers, barre, quality, fretNumber?, name? }
+{ pattern: 'r r+2 r+2 r+1 r r', rootStr: 6, fingers: '1 3 4 2 1 1', barre: true, quality: 'M' }
+```
+
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| pattern | ✅ | 프렛 패턴 문자열 (r 변수 사용) |
+| rootStr | ✅ | 근음 현 번호 (6=6번줄, 5=5번줄, 4=4번줄) |
+| fingers | ✅ | 손가락 번호 문자열 |
+| barre | ✅ | true = r 프렛에 바레 자동 생성 |
+| quality | ✅ | 정렬 기준 + 코드명 접미사 (`'M'`은 접미사 없음) |
+| fretNumber | ☐ | 고정 프렛 번호 (생략 시 `Math.max(2, r+1)` 자동 적용 — 슬롯1이 바레 위치) |
+| name | ☐ | `(r, flat) => string` — 복잡한 코드명이 필요할 때 직접 지정 |
+
+코드명 자동 생성: `rootStr 현의 r프렛 음이름 + quality접미사`
+예) rootStr=5, quality='M7', r=3 → `'CM7'`
+
+### `name` 함수와 `chordNoteName()` 사용법
+
+분수코드처럼 근음이 `r`프렛과 다른 위치에 있을 때는 `name` 함수를 직접 지정한다.  
+`chords-library.js`가 `window.chordNoteName = fn`으로 전역 노출하므로 `chord-voicings.js`에서 사용 가능.
+
+```js
+// chordNoteName(si, fret, flat) → 음이름
+// si: 줄 인덱스 (0=6번줄 E, 1=5번줄 A, 2=4번줄 D, 3=3번줄 G, 4=2번줄 B, 5=1번줄 e)
+// si = 6 - rootStr
+```
+
+| si | 줄 | 개방음 |
+|----|-----|------|
+| 0 | 6번줄 | E |
+| 1 | 5번줄 | A |
+| 2 | 4번줄 | D |
+| 3 | 3번줄 | G |
+| 4 | 2번줄 | B |
+| 5 | 1번줄 | e |
+
+**예시 — E형 분수코드 (G/B, Ab/C, A/C# ...)**
+```js
+// 6번줄 근음(E형)에서 3번줄이 베이스인 경우
+// 베이스음: 3번줄(si=3), r+1 프렛
+// 근음:     6번줄(si=0), r 프렛
+{
+  pattern: 'r r+2 r+2 r+1 r+1 r+1',
+  rootStr: 6,
+  fingers: '1 3 4 2 2 2',
+  barre: false,
+  quality: 'slash',
+  name: (r, flat) =>
+    chordNoteName(0, r, flat) + '/' + chordNoteName(3, r + 1, flat)
+}
+```
+
+## TODO
+- [ ] `voicing-library.js`의 `DIRECT` / `FORMULA` 데이터를 `chord-voicings.js` 포맷 기반으로 리팩토링
 
 # 특정 기타 코드를 말할 때는 6번줄부터 순서대로 나열
 - ex. x02220 -> 6번줄 뮤트, 5번줄 개방현, 4번줄 2프랫, 3번줄 2프랫, 2번줄 2프랫, 1번줄 개방현
@@ -403,6 +579,45 @@ BEGIN
 END;
 $$;
 ```
+
+---
+
+# 코드 라이브러리 — 취급 코드 목록 v1 (C 기준)
+
+C음 기준으로 작성한 목록이며, 실제 코드는 12개 음별로 존재함.  
+여기에 없는 코드는 취급하지 않음. 미처 추가하지 못한 코드가 있다면 v2 목록으로 갱신 예정.
+
+## [Triad]
+C, Cm, Caug, Cdim, Csus4, Csus2
+
+## [7th chords]
+CM7, C7, C6,  
+CmM7, Cm7, Cm6,  
+Cdim7, Cm7(b5),  
+Caug7, C7sus4
+
+## [전위코드]
+C/E, CM7/E, C7/E,  
+C/G, CM7/G, C7/G,  
+C/B (= CM7/B),  
+C/Bb (= C7/Bb),  
+Cm/Eb, Cm7/Eb,  
+Cm/G, Cm7/G,  
+Cm/Bb (= Cm7/Bb),  
+Csus4/E, Csus4/G,  
+Cadd9/E, Cadd9/G
+
+## [Tension]
+Cadd9 (=Cadd2), CM7(9) (=CM9), CM7(#11), CM7(13) (=CM13),  
+C7(b9), C7(9) (=C9), C7(#11), C7(b13), C7(13) (=C13),  
+Cm7(9) (=Cm9), Cm7(11) (=Cm11)
+
+## [하이브리드 코드]
+C/D, C/F, CM7/F, C/A (=Am7), Cm/Db, Cm/D, Cm/F, Cm/Ab (=AbM7), Cm/A (=Am7(b5)),  
+Cm/B (=CmM7/B)
+
+## [etc.]
+5, (no3), (no5)
 
 ---
 
