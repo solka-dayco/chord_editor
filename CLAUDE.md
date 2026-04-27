@@ -674,9 +674,8 @@ pro_entitlement 클릭 → Attach → Pro 월간 구독 선택 → 저장
 - `android/app/build.gradle`에서 수동 관리
 
 ### 현재 상태 (2026-04-27 기준)
-- **main 최신 출시:** versionCode 28 / `1.0.1`
-- **staging:** versionCode 29 / `1.1.0_pre_1`
-- **다음 main:** `1.1.0`
+- **main 최신 출시:** versionCode 30 / `1.1.0`
+- **다음 dev:** `1.1.1_dev_1`
 
 ---
 
