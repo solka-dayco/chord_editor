@@ -317,6 +317,59 @@ npx cap sync
 
 ---
 
+## staging 브랜치 커밋 체크리스트
+
+`dev → staging` 머지 후 **반드시** 아래 항목을 순서대로 확인한다.
+
+### 1. DEV ONLY 온보딩 건너뜀 코드 제거 ✅
+
+`app.js` → `tryAutoSignIn()` 상단의 4줄을 제거했는지 확인.
+
+```js
+// ── 이 블록 전체 제거 ──
+// ── DEV ONLY: 온보딩 건너뜀 (USB 디버깅 환경에서 Google 로그인 불가) ──
+// main 병합 시 아래 3줄 제거
+hideOnboarding(); _authReady = true; _authResolve(); return;
+// ── /DEV ──
+```
+
+제거 후 `www/app.js`도 동기화 필수.
+
+### 2. Android Studio를 staging 브랜치로 전환
+
+Android Studio에서 staging 브랜치를 사용하도록 전환해야 빌드 시 올바른 코드가 적용된다.
+
+```
+Android Studio → Git 탭 (하단) → Branches → staging → Checkout
+```
+
+또는 터미널에서:
+```bash
+git checkout staging
+```
+
+전환 후 **File → Sync Project with Gradle Files** 를 실행해 `build.gradle`(versionCode/versionName)을 반영한다.
+
+### 3. Android assets 수동 동기화
+
+staging 체크아웃 후 `android/app/src/main/assets/public/`은 자동 갱신되지 않으므로 직접 복사:
+
+```bash
+cp app.js android/app/src/main/assets/public/app.js
+cp index.html android/app/src/main/assets/public/index.html
+cp style.css android/app/src/main/assets/public/style.css
+cp chord-voicings.js android/app/src/main/assets/public/chord-voicings.js
+cp chords-library.js android/app/src/main/assets/public/chords-library.js
+cp voicing-library.js android/app/src/main/assets/public/voicing-library.js
+```
+
+### 4. 실기기 로그인 온보딩 동작 확인
+
+APK 빌드 후 실기기에서 앱 실행 시 **로그인 화면(온보딩)이 정상적으로 표시**되는지 확인.  
+건너뛰어진다면 1번 항목 미처리 상태임.
+
+---
+
 ## Android 빌드 설정
 
 `android/variables.gradle`:
