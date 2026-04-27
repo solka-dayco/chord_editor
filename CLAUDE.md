@@ -1,5 +1,27 @@
 # Chorditor — CLAUDE.md 초기에 참조할 정보
 
+---
+## ⚠️ CRITICAL — staging/main 커밋 전 필수 확인 (컴팩션 후에도 반드시 적용)
+
+**`dev → staging` 또는 `dev → main` 머지·커밋 시, 아래 코드가 `app.js`에 남아있으면 절대 안 된다.**
+
+```js
+// ── DEV ONLY: 온보딩 건너뜀 (USB 디버깅 환경에서 Google 로그인 불가) ──
+hideOnboarding(); _authReady = true; _authResolve(); return;
+// ── /DEV ──
+```
+
+이 코드가 남아있으면 **앱 실행 시 로그인 화면이 표시되지 않는다.** (로그인 버튼을 눌러도 아무 반응 없음)
+
+**staging/main 커밋 전 체크:**
+```bash
+grep -n "DEV ONLY" app.js   # 출력이 없어야 정상
+```
+
+위 grep 결과가 한 줄이라도 나오면 → 해당 블록 전체 삭제 후 커밋.
+
+---
+
 ## 프로젝트 개요
 
 기타 코드(Guitar Chord) 제작 및 관리 도구. 웹 + Android(Capacitor) 크로스플랫폼.
