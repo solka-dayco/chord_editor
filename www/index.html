@@ -24,19 +24,17 @@
     <!-- ── 사이드바 ── -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <span class="sidebar-logo" onclick="navigateTo('editor')">CHORDITOR<span class="sidebar-version" id="app-version"></span></span>
+        <span class="sidebar-logo" onclick="navigateTo('editor')">CHORDITOR</span>
         <button class="icon-btn" onclick="promptCreateProject()" title="새 프로젝트">
           <i data-lucide="circle-plus"></i>
         </button>
       </div>
 
-      <!-- 라이브러리 버튼 -->
-      <button class="sidebar-library-btn" id="btn-library" onclick="openLibrary()">
-        <i data-lucide="book-open"></i>
-        <span>라이브러리</span>
-      </button>
-
       <nav class="sidebar-nav">
+        <div class="sidebar-section">
+          <div class="sidebar-section-label">중요</div>
+          <div id="sidebar-important" class="sidebar-list"></div>
+        </div>
         <div class="sidebar-section">
           <div class="sidebar-section-label">즐겨찾기</div>
           <div id="sidebar-pinned" class="sidebar-list"></div>
@@ -62,88 +60,124 @@
     <!-- ── 메인 영역 ── -->
     <div class="main-area" id="main-area">
 
+      <!-- ── 통합 헤더: 타이틀 + 탭 바 ── -->
+      <div class="main-header" id="main-header">
+        <div class="header">
+          <h1>Chorditor<span class="sidebar-version" id="app-version"></span></h1>
+        </div>
+        <div class="main-tabs" id="main-tabs">
+          <button class="main-tab active" id="tab-editor" onclick="switchMainTab('editor')">코드 에디터</button>
+          <button class="main-tab" id="tab-library" onclick="switchMainTab('library')">코드 사전</button>
+          <button class="main-tab" id="tab-lecture" disabled>기타 강좌</button>
+        </div>
+      </div>
+
       <!-- 에디터 뷰 -->
       <div class="view" id="view-editor">
-        <div class="header">
-          <h1>Chorditor</h1>
-          <span>기타 코드표 제작 도구</span>
-        </div>
 
         <div class="card">
 
           <!-- ── 코드명 빌더 ── -->
           <div class="chord-builder">
 
-            <!-- 행 1: #/b 모드 + 근음 -->
-            <div class="builder-row">
+            <!-- 상단: #/b 토글 + 코드명 미리보기 -->
+            <div class="builder-header">
               <div class="accidental-toggle">
                 <button class="acc-btn active" id="acc-sharp" onclick="setAccidental('sharp')">#</button>
                 <button class="acc-btn" id="acc-flat" onclick="setAccidental('flat')">b</button>
               </div>
-              <div class="divider"></div>
-              <div class="builder-group" id="root-group"></div>
-            </div>
-
-            <!-- 행 2: 3화음 -->
-            <div class="builder-row">
-              <span class="builder-label">3화음</span>
-              <div class="builder-group" id="triad-group">
-                <button class="sel-btn active" onclick="selectTriad('')">M</button>
-                <button class="sel-btn" onclick="selectTriad('m')">m</button>
-                <button class="sel-btn" onclick="selectTriad('aug')">aug</button>
-                <button class="sel-btn" onclick="selectTriad('dim')">dim</button>
+              <div class="chord-preview">
+                <span id="chord-display" class="chord-display">A</span>
+                <span id="chord-suggestions" class="chord-suggestions"></span>
               </div>
             </div>
 
-            <!-- 행 3: 7음 -->
-            <div class="builder-row">
-              <span class="builder-label">7음</span>
-              <div class="builder-group" id="seventh-group">
-                <button class="sel-btn active" onclick="selectSeventh('')">없음</button>
-                <button class="sel-btn" onclick="selectSeventh('M7')">M7</button>
-                <button class="sel-btn" onclick="selectSeventh('7')">7</button>
-                <button class="sel-btn" onclick="selectSeventh('6')">6</button>
-              </div>
-            </div>
+            <!-- 수평 컬럼 피커: 근음 → 3화음 → 7음 → 기능 → 텐션 → 분수 -->
+            <div class="builder-columns">
 
-            <!-- 행 4: 기능 -->
-            <div class="builder-row">
-              <span class="builder-label">기능</span>
-              <div class="builder-group" id="func-group">
-                <button class="sel-btn active" onclick="selectFunc('')">없음</button>
-                <button class="sel-btn" onclick="selectFunc('sus4')">sus4</button>
-                <button class="sel-btn" onclick="selectFunc('add9')">add9</button>
-                <button class="sel-btn" onclick="selectFunc('b5')">(b5)</button>
+              <!-- 근음 -->
+              <div class="builder-col">
+                <div class="col-label">근음</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="root-group"></div>
+                </div>
               </div>
-            </div>
 
-            <!-- 행 5: 텐션 (다중선택) -->
-            <div class="builder-row">
-              <span class="builder-label">텐션</span>
-              <div class="builder-group" id="tension-group">
-                <button class="sel-btn toggle" onclick="toggleTension('b9')">b9</button>
-                <button class="sel-btn toggle" onclick="toggleTension('9')">9</button>
-                <button class="sel-btn toggle" onclick="toggleTension('#9')">#9</button>
-                <button class="sel-btn toggle" onclick="toggleTension('11')">11</button>
-                <button class="sel-btn toggle" onclick="toggleTension('#11')">#11</button>
-                <button class="sel-btn toggle" onclick="toggleTension('b13')">b13</button>
-                <button class="sel-btn toggle" onclick="toggleTension('13')">13</button>
+              <div class="col-divider"></div>
+
+              <!-- 3화음 -->
+              <div class="builder-col">
+                <div class="col-label">3화음</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="triad-group">
+                    <button class="sel-btn active" onclick="selectTriad('')">M</button>
+                    <button class="sel-btn" onclick="selectTriad('m')">m</button>
+                    <button class="sel-btn" onclick="selectTriad('aug')">aug</button>
+                    <button class="sel-btn" onclick="selectTriad('dim')">dim</button>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <!-- 행 6: 분수코드 -->
-            <div class="builder-row">
-              <span class="builder-label">분수</span>
-              <div class="builder-group" id="bass-group">
-                <button class="sel-btn active" onclick="selectBass('')">없음</button>
+              <div class="col-divider"></div>
+
+              <!-- 7음 -->
+              <div class="builder-col">
+                <div class="col-label">7음</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="seventh-group">
+                    <button class="sel-btn active" onclick="selectSeventh('')">-</button>
+                    <button class="sel-btn" onclick="selectSeventh('M7')">M7</button>
+                    <button class="sel-btn" onclick="selectSeventh('7')">7</button>
+                    <button class="sel-btn" onclick="selectSeventh('6')">6</button>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <!-- 미리보기 -->
-            <div class="chord-preview">
-              <span class="preview-label">코드명</span>
-              <span id="chord-display" class="chord-display">A</span>
-              <span id="chord-suggestions" class="chord-suggestions"></span>
+              <div class="col-divider"></div>
+
+              <!-- 기능 -->
+              <div class="builder-col">
+                <div class="col-label">기능</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="func-group">
+                    <button class="sel-btn active" onclick="selectFunc('')">-</button>
+                    <button class="sel-btn" onclick="selectFunc('sus2')">sus2</button>
+                    <button class="sel-btn" onclick="selectFunc('sus4')">sus4</button>
+                    <button class="sel-btn" onclick="selectFunc('add9')">add9</button>
+                    <button class="sel-btn" onclick="selectFunc('b5')">(b5)</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-divider"></div>
+
+              <!-- 텐션 (단일선택 스냅 피커) -->
+              <div class="builder-col">
+                <div class="col-label">텐션</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="tension-group">
+                    <button class="sel-btn active" onclick="selectTension('')">-</button>
+                    <button class="sel-btn" onclick="selectTension('b9')">b9</button>
+                    <button class="sel-btn" onclick="selectTension('9')">9</button>
+                    <button class="sel-btn" onclick="selectTension('#9')">#9</button>
+                    <button class="sel-btn" onclick="selectTension('11')">11</button>
+                    <button class="sel-btn" onclick="selectTension('#11')">#11</button>
+                    <button class="sel-btn" onclick="selectTension('b13')">b13</button>
+                    <button class="sel-btn" onclick="selectTension('13')">13</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-divider"></div>
+
+              <!-- 분수코드 -->
+              <div class="builder-col">
+                <div class="col-label">분수</div>
+                <div class="col-wheel-wrap">
+                  <div class="col-scroll" id="bass-group"></div>
+                </div>
+              </div>
+
             </div>
 
           </div>
@@ -181,6 +215,10 @@
             <div class="canvas-inner">
               <canvas id="c"></canvas>
               <div id="barre-btns"></div>
+              <button class="chord-apply-btn" id="chord-apply-btn"
+                      onclick="applyFirstSuggestion()" title="추천 코드명 적용">
+                <i data-lucide="check"></i>
+              </button>
             </div>
           </div>
 
@@ -228,89 +266,80 @@
         <!-- JS로 렌더링 -->
       </div>
 
-    </div>
+      <!-- 라이브러리 뷰 -->
+      <div class="view hidden" id="view-library">
 
-    <!-- 라이브러리 뷰 (메인 영역 밖, app-wrapper 직속 자식) -->
-    <div class="hidden" id="view-library">
-
-      <!-- 0. 상단 바: 뒤로가기 -->
-      <div class="lib-topbar">
-        <button class="lib-back-btn" onclick="closeLibrary()" title="뒤로가기">
-          <i data-lucide="arrow-left"></i>
-        </button>
-      </div>
-
-      <!-- 1. 최상단 검색창 -->
-      <div class="lib-search-bar">
-        <i data-lucide="search" class="lib-search-icon"></i>
-        <input type="text" id="lib-search"
-               placeholder="코드 검색... (C, Am, G7)"
-               oninput="onLibSearch(this.value)"
-               onkeydown="if(event.key==='Enter'){event.target.blur();showLibSearchModal();}" />
-      </div>
-
-      <!-- 검색 결과 모달 (lib-action-bar + lib-bottom 위에 슬라이드 업) -->
-      <div class="lib-search-modal" id="lib-search-modal">
-        <div class="lib-search-modal-header">
-          <span class="lib-search-modal-title" id="lib-search-modal-title"></span>
-          <button class="icon-btn" onclick="closeLibSearchModal()">
-            <i data-lucide="x"></i>
-          </button>
+        <!-- 1. 검색창 -->
+        <div class="lib-search-bar">
+          <i data-lucide="search" class="lib-search-icon"></i>
+          <input type="text" id="lib-search"
+                 placeholder="코드 검색... (C, Am, G7)"
+                 oninput="onLibSearch(this.value)"
+                 onkeydown="if(event.key==='Enter'){event.target.blur();showLibSearchModal();}" />
         </div>
-        <div class="lib-cards" id="lib-search-cards"></div>
-      </div>
 
-      <!-- 2. 코드 뷰어: 캔버스 + 재생버튼 + 운지 내비게이션 -->
-      <div class="lib-viewer">
-        <canvas id="lib-canvas"></canvas>
-        <button class="lib-play-btn" onclick="libPlayChord()" title="재생">
-          <i data-lucide="play"></i>
-        </button>
-        <div class="lib-fingering-nav" id="lib-fingering-nav" style="display:none;">
-          <button class="lib-fingering-btn" onclick="prevLibFingering()">
-            <i data-lucide="chevron-left"></i>
-          </button>
-          <span class="lib-fingering-label">1 / 2</span>
-          <button class="lib-fingering-btn" onclick="nextLibFingering()">
-            <i data-lucide="chevron-right"></i>
-          </button>
+        <!-- 검색 결과 모달 -->
+        <div class="lib-search-modal" id="lib-search-modal">
+          <div class="lib-search-modal-header">
+            <span class="lib-search-modal-title" id="lib-search-modal-title"></span>
+            <button class="icon-btn" onclick="closeLibSearchModal()">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="lib-cards" id="lib-search-cards"></div>
         </div>
-      </div>
 
-      <!-- 3. 액션 바: 샵/플랫 + 손가락번호 + 저장 + 가져오기 -->
-      <div class="lib-action-bar">
-        <div class="accidental-toggle">
-          <button class="acc-btn active" id="lib-acc-sharp"
-                  onclick="setLibAccidental('sharp')">#</button>
-          <button class="acc-btn" id="lib-acc-flat"
-                  onclick="setLibAccidental('flat')">b</button>
+        <!-- 2. 코드 뷰어: 캔버스 + 재생버튼 + 운지 내비게이션 -->
+        <div class="lib-viewer">
+          <canvas id="lib-canvas"></canvas>
+          <button class="lib-play-btn" onclick="libPlayChord()" title="재생">
+            <i data-lucide="play"></i>
+          </button>
+          <div class="lib-fingering-nav" id="lib-fingering-nav" style="display:none;">
+            <button class="lib-fingering-btn" onclick="prevLibFingering()">
+              <i data-lucide="chevron-left"></i>
+            </button>
+            <span class="lib-fingering-label">1 / 2</span>
+            <button class="lib-fingering-btn" onclick="nextLibFingering()">
+              <i data-lucide="chevron-right"></i>
+            </button>
+          </div>
         </div>
-        <button class="mode-btn active" id="lib-finger-btn"
-                onclick="toggleLibFingerNum()" title="손가락 번호">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="10"/>
-            <text x="12" y="16.5" text-anchor="middle" font-size="11" font-family="serif" fill="currentColor" stroke="none" font-weight="bold">T</text>
-          </svg>
-        </button>
-        <span class="ab-spacer"></span>
-        <button class="ab-btn" onclick="showScaleDropdown(this,'library')">이미지 저장</button>
-        <button class="ab-btn ab-btn-primary" onclick="importLibChordToProject()">가져오기</button>
-      </div>
 
-      <!-- 4. 코드 목록: 근음 세로(좌) + 카드 그리드(우) -->
-      <div class="lib-bottom">
-        <!-- 보이싱 피커 오버레이: lib-bottom 전체 커버, action-bar는 덮지 않음 -->
-        <div class="lib-voicing-overlay" id="lib-voicing-overlay"
-             onclick="closeVoicingModal()"></div>
-        <div class="lib-root-list" id="lib-root-tabs"></div>
-        <div class="lib-cards-area">
-          <div class="lib-cards" id="lib-cards"></div>
-          <!-- 보이싱 피커 모달: 카드 에어리어 위에서 확장 -->
+        <!-- 3. 액션 바: 샵/플랫 + 손가락번호 + 저장 + 가져오기 -->
+        <div class="lib-action-bar">
+          <div class="accidental-toggle">
+            <button class="acc-btn active" id="lib-acc-sharp"
+                    onclick="setLibAccidental('sharp')">#</button>
+            <button class="acc-btn" id="lib-acc-flat"
+                    onclick="setLibAccidental('flat')">b</button>
+          </div>
+          <button class="mode-btn active" id="lib-finger-btn"
+                  onclick="toggleLibFingerNum()" title="손가락 번호">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10"/>
+              <text x="12" y="16.5" text-anchor="middle" font-size="11" font-family="serif" fill="currentColor" stroke="none" font-weight="bold">T</text>
+            </svg>
+          </button>
+          <span class="ab-spacer"></span>
+          <button class="ab-btn" onclick="showScaleDropdown(this,'library')">이미지 저장</button>
+          <button class="ab-btn ab-btn-primary" onclick="importLibChordToProject()">가져오기</button>
+        </div>
+
+        <!-- 4. 코드 목록: 근음 세로(좌) + 카드 그리드(우) -->
+        <div class="lib-bottom">
+          <div class="lib-root-list" id="lib-root-tabs"></div>
+          <div class="lib-cards-area">
+            <div class="lib-cards" id="lib-cards"></div>
+          </div>
+          <div class="lib-voicing-overlay" id="lib-voicing-overlay"
+               onclick="closeVoicingModal()"></div>
           <div class="lib-voicing-modal" id="lib-voicing-modal"
                onclick="closeVoicingModal()">
             <div class="lib-voicing-grid" id="lib-voicing-grid"></div>
           </div>
         </div>
+
       </div>
 
     </div>
@@ -459,7 +488,7 @@
               <span class="price-amount">₩0</span>
             </div>
             <ul class="plan-card-features">
-              <li>프로젝트 2개</li>
+              <li>프로젝트 3개</li>
               <li>이미지 저장 x1 이하</li>
               <li>코드표 편집 무제한</li>
             </ul>
@@ -665,9 +694,9 @@
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
   <script src="app.js"></script>
-  <script src="voicing-library.js"></script>
   <script src="chord-voicings.js"></script>
   <script src="chords-library.js"></script>
+  <script src="voicing-library.js"></script>
 
   <!-- 이미지 저장 배율 드롭다운 (에디터/라이브러리 공용) -->
   <div class="scale-dropdown" id="scale-dropdown">

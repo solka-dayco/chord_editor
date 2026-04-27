@@ -49,7 +49,7 @@ function resizeCanvas() {
   canvas.style.height = 'auto';
   // canvas-inner를 캔버스 표시 크기에 맞춤 (바레 버튼 기준점, 중앙정렬용)
   canvas.parentElement.style.width = displayW + 'px';
-  RATIO = availW / BASE_W;
+  RATIO = (displayW * 2) / BASE_W; // 2x 화질: 물리 픽셀 = CSS 표시 크기의 2배
   canvas.width  = W();
   canvas.height = CH();
   draw();
@@ -401,6 +401,62 @@ let currentProjectId = null;
 let isEditMode = true;
 
 
+// ── Wheel Picker ─────────────────────────────────────────────
+// CSS --picker-item-h 와 반드시 일치
+const PICKER_ITEM_H = 30;
+
+function initWheelPicker(scrollEl, getIdx, onPick) {
+  if (!scrollEl) return;
+  let timer, programmatic = false;
+
+  scrollEl.addEventListener('scroll', () => {
+    if (programmatic) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const total = scrollEl.children.length;
+      if (!total) return;
+      const idx = Math.max(0, Math.min(Math.round(scrollEl.scrollTop / PICKER_ITEM_H), total - 1));
+      onPick(idx);
+    }, 150);
+  });
+
+  scrollEl._scrollToIdx = (idx, smooth = false) => {
+    programmatic = true;
+    scrollEl.scrollTo({ top: Math.max(0, idx) * PICKER_ITEM_H, behavior: smooth ? 'smooth' : 'instant' });
+    setTimeout(() => { programmatic = false; }, smooth ? 500 : 30);
+  };
+
+  requestAnimationFrame(() => scrollEl._scrollToIdx(Math.max(0, getIdx())));
+}
+
+function initStaticWheelPickers() {
+  const TRIAD_VALS   = ['', 'm', 'aug', 'dim'];
+  const SEVENTH_VALS = ['', 'M7', '7', '6'];
+  const FUNC_VALS    = ['', 'sus2', 'sus4', 'add9', 'b5'];
+  const TENSION_VALS = ['', 'b9', '9', '#9', '11', '#11', 'b13', '13'];
+
+  initWheelPicker(
+    document.getElementById('triad-group'),
+    () => Math.max(0, TRIAD_VALS.indexOf(selectedTriad)),
+    (i) => selectTriad(TRIAD_VALS[i])
+  );
+  initWheelPicker(
+    document.getElementById('seventh-group'),
+    () => Math.max(0, SEVENTH_VALS.indexOf(selectedSeventh)),
+    (i) => selectSeventh(SEVENTH_VALS[i])
+  );
+  initWheelPicker(
+    document.getElementById('func-group'),
+    () => Math.max(0, FUNC_VALS.indexOf(selectedFunc)),
+    (i) => selectFunc(FUNC_VALS[i])
+  );
+  initWheelPicker(
+    document.getElementById('tension-group'),
+    () => Math.max(0, TENSION_VALS.indexOf(selectedTensions[0] ?? '')),
+    (i) => selectTension(TENSION_VALS[i])
+  );
+}
+
 function renderBtnGroup(groupId, items, getCurrent, onSelect, noneLabel) {
   const group = document.getElementById(groupId);
   if (!group) return;
@@ -424,15 +480,67 @@ function renderBtnGroup(groupId, items, getCurrent, onSelect, noneLabel) {
 function renderRootBtns() {
   const roots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
   if (!roots.includes(selectedRoot)) selectedRoot = roots[0];
-  renderBtnGroup('root-group', roots, () => selectedRoot, v => { selectedRoot = v; renderRootBtns(); });
+
+  const group = document.getElementById('root-group');
+  if (!group) return;
+  group.innerHTML = '';
+  roots.forEach((r, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'sel-btn' + (r === selectedRoot ? ' active' : '');
+    btn.textContent = r;
+    btn.onclick = () => {
+      selectedRoot = r;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      updateChordDisplay();
+    };
+    group.appendChild(btn);
+  });
+
+  initWheelPicker(group, () => roots.indexOf(selectedRoot), (i) => {
+    selectedRoot = roots[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    updateChordDisplay();
+  });
 }
 
 function renderBassBtns() {
   const roots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
-  renderBtnGroup('bass-group', roots, () => selectedBass, v => { selectedBass = v; renderBassBtns(); }, '없음');
+  const vals   = ['', ...roots];
+  const labels = ['-', ...roots];
+
+  const group = document.getElementById('bass-group');
+  if (!group) return;
+  group.innerHTML = '';
+  vals.forEach((v, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'sel-btn' + (v === selectedBass ? ' active' : '');
+    btn.textContent = labels[i];
+    btn.onclick = () => {
+      selectedBass = v;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      updateChordDisplay();
+    };
+    group.appendChild(btn);
+  });
+
+  initWheelPicker(group, () => Math.max(0, vals.indexOf(selectedBass)), (i) => {
+    selectedBass = vals[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    updateChordDisplay();
+  });
 }
 
 function setAccidental(mode) {
+  // 음높이(인덱스) 유지하며 표기법만 변환
+  const oldRoots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const newRoots = mode         === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const rootIdx = oldRoots.indexOf(selectedRoot);
+  if (rootIdx !== -1) selectedRoot = newRoots[rootIdx];
+  const bassIdx = oldRoots.indexOf(selectedBass);
+  if (bassIdx !== -1) selectedBass = newRoots[bassIdx];
+
   accidental = mode;
   document.getElementById('acc-sharp').classList.toggle('active', mode === 'sharp');
   document.getElementById('acc-flat').classList.toggle('active', mode === 'flat');
@@ -445,34 +553,64 @@ function selectTriad(val) {
   selectedTriad = val;
   document.querySelectorAll('#triad-group .sel-btn').forEach(b =>
     b.classList.toggle('active', b.textContent === (val === '' ? 'M' : val)));
+  const el = document.getElementById('triad-group');
+  if (el?._scrollToIdx) {
+    const idx = ['', 'm', 'aug', 'dim'].indexOf(val);
+    if (idx >= 0 && Math.abs(el.scrollTop - idx * PICKER_ITEM_H) > 2) el._scrollToIdx(idx, true);
+  }
   updateChordDisplay();
 }
 
 function selectSeventh(val) {
   selectedSeventh = val;
   document.querySelectorAll('#seventh-group .sel-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val)));
+    b.classList.toggle('active', b.textContent === (val === '' ? '-' : val)));
+  const el = document.getElementById('seventh-group');
+  if (el?._scrollToIdx) {
+    const idx = ['', 'M7', '7', '6'].indexOf(val);
+    if (idx >= 0 && Math.abs(el.scrollTop - idx * PICKER_ITEM_H) > 2) el._scrollToIdx(idx, true);
+  }
   updateChordDisplay();
 }
 
 function selectFunc(val) {
   selectedFunc = val;
   document.querySelectorAll('#func-group .sel-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent === (val === '' ? '없음' : val === 'b5' ? '(b5)' : val)));
+    b.classList.toggle('active', b.textContent === (val === '' ? '-' : val === 'b5' ? '(b5)' : val)));
+  const el = document.getElementById('func-group');
+  if (el?._scrollToIdx) {
+    const idx = ['', 'sus2', 'sus4', 'add9', 'b5'].indexOf(val);
+    if (idx >= 0 && Math.abs(el.scrollTop - idx * PICKER_ITEM_H) > 2) el._scrollToIdx(idx, true);
+  }
   updateChordDisplay();
 }
 
-function toggleTension(val) {
-  const idx = selectedTensions.indexOf(val);
-  idx !== -1 ? selectedTensions.splice(idx, 1) : selectedTensions.push(val);
-  document.querySelectorAll('#tension-group .sel-btn').forEach(b =>
-    b.classList.toggle('active', selectedTensions.includes(b.textContent)));
+function selectTension(val) {
+  selectedTensions = val ? [val] : [];
+  const TENSION_VALS = ['', 'b9', '9', '#9', '11', '#11', 'b13', '13'];
+  document.querySelectorAll('#tension-group .sel-btn').forEach((b, i) =>
+    b.classList.toggle('active', TENSION_VALS[i] === val));
+  const el = document.getElementById('tension-group');
+  if (el?._scrollToIdx) {
+    const idx = TENSION_VALS.indexOf(val);
+    if (idx >= 0 && Math.abs(el.scrollTop - idx * PICKER_ITEM_H) > 2) el._scrollToIdx(idx, true);
+  }
   updateChordDisplay();
 }
+// 레거시 호환
+function toggleTension(val) { selectTension(selectedTensions.includes(val) ? '' : val); }
 
 function selectBass(val) {
   selectedBass = val;
-  renderBassBtns();
+  const roots = accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const vals  = ['', ...roots];
+  const idx   = Math.max(0, vals.indexOf(val));
+  const group = document.getElementById('bass-group');
+  if (group) {
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === idx));
+    if (group._scrollToIdx && Math.abs(group.scrollTop - idx * PICKER_ITEM_H) > 2)
+      group._scrollToIdx(idx, true);
+  }
   updateChordDisplay();
 }
 
@@ -508,7 +646,68 @@ function updateChordSuggestions() {
   const el = document.getElementById('chord-suggestions');
   if (!el) return;
   const names = suggestChordNames();
-  el.innerHTML = names.map(n => `<span class="chord-suggest-item">${n}</span>`).join('');
+  el.innerHTML = names.map(n =>
+    `<span class="chord-suggest-item" onclick="applyChordSuggestion('${n.replace(/'/g, "\\'")}')">${n}</span>`
+  ).join('');
+}
+
+// 코드명 문자열 → 휠피커 컴포넌트 파싱
+function parseChordNameToComponents(name) {
+  const rootMatch = name.match(/^([A-G][#b]?)/);
+  if (!rootMatch) return null;
+  const root = rootMatch[1];
+  let rest = name.slice(root.length);
+
+  // 분수코드 베이스 추출
+  let bass = '';
+  const slashIdx = rest.lastIndexOf('/');
+  if (slashIdx >= 0) {
+    bass = rest.slice(slashIdx + 1);
+    rest = rest.slice(0, slashIdx);
+  }
+
+  // suffix → 컴포넌트 (긴 것 우선)
+  const MAP = [
+    ['mM7',    { triad: 'm',   seventh: 'M7', func: '' }],
+    ['m7(b5)', { triad: 'm',   seventh: '7',  func: 'b5' }],
+    ['m7',     { triad: 'm',   seventh: '7',  func: '' }],
+    ['m6',     { triad: 'm',   seventh: '6',  func: '' }],
+    ['M7(9)',  { triad: '',    seventh: 'M7', func: '' }],
+    ['M7',     { triad: '',    seventh: 'M7', func: '' }],
+    ['7sus4',  { triad: '',    seventh: '7',  func: 'sus4' }],
+    ['7',      { triad: '',    seventh: '7',  func: '' }],
+    ['6',      { triad: '',    seventh: '6',  func: '' }],
+    ['dim7',   { triad: 'dim', seventh: '7',  func: '' }],
+    ['dim',    { triad: 'dim', seventh: '',   func: '' }],
+    ['aug7',   { triad: 'aug', seventh: '7',  func: '' }],
+    ['aug',    { triad: 'aug', seventh: '',   func: '' }],
+    ['sus4',   { triad: '',    seventh: '',   func: 'sus4' }],
+    ['sus2',   { triad: '',    seventh: '',   func: 'sus2' }],
+    ['add9',   { triad: '',    seventh: '',   func: 'add9' }],
+    ['m',      { triad: 'm',   seventh: '',   func: '' }],
+    ['',       { triad: '',    seventh: '',   func: '' }],
+  ];
+
+  for (const [suffix, comp] of MAP) {
+    if (rest === suffix) {
+      return { root, bass, ...comp };
+    }
+  }
+  return { root, bass, triad: '', seventh: '', func: '' };
+}
+
+// 추천 코드명 클릭 → 휠피커 적용
+function applyChordSuggestion(name) {
+  const comp = parseChordNameToComponents(name);
+  if (!comp) return;
+  selectedRoot = comp.root;
+  selectedBass = comp.bass || '';
+  renderRootBtns();
+  renderBassBtns();
+  selectTriad(comp.triad);
+  selectSeventh(comp.seventh);
+  selectFunc(comp.func);
+  selectTension('');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -756,10 +955,28 @@ function drawCanvas(c, ratio, data = null) {
   c.restore();
 }
 
+let _chordDirty = false;
+
+function updateApplyBtn() {
+  const btn = document.getElementById('chord-apply-btn');
+  if (!btn) return;
+  btn.classList.toggle('active', _chordDirty);
+}
+
 function draw() {
   drawCanvas(ctx, RATIO);
   updateBarreBtns();
   updateChordSuggestions();
+  _chordDirty = true;
+  updateApplyBtn();
+}
+
+function applyFirstSuggestion() {
+  const names = suggestChordNames();
+  if (!names.length) return;
+  applyChordSuggestion(names[0]);
+  _chordDirty = false;
+  updateApplyBtn();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -776,15 +993,15 @@ function updateBarreBtns() {
     }
     const btn = document.createElement('button');
     btn.textContent = 'B';
-    const ds = MAIN_DISPLAY_SCALE;
-    const btnSize = Math.round(24 * ds);
+    const ds = parseFloat(canvas.style.width) / canvas.width; // 물리→CSS 실제 변환 비율
+    const btnSize = Math.round(48 * ds);
     const left = Math.round((TL() + (f - 0.5) * FW()) * ds) - Math.round(btnSize / 2);
     const top  = Math.round((TT() - DS()) * ds) - Math.round(btnSize * 0.67);
     btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${btnSize}px;height:${btnSize}px;
       border-radius:50%;border:1.5px solid #888;
       background:${barreActive[f] ? '#1a1714' : '#fff'};
       color:${barreActive[f] ? '#fff' : '#888'};
-      font-size:${Math.round(11 * ds)}px;font-family:'Pretendard',sans-serif;
+      font-size:${Math.round(22 * ds)}px;font-family:'Pretendard',sans-serif;
       cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;`;
     btn.onclick = () => {
       if (!barreActive[f]) {
@@ -1181,7 +1398,7 @@ function getPlan() {
 
 // ── 유료 플랜 제한 설정 ──────────────────────────────────────────
 const PLAN_LIMITS = {
-  free:     { maxProjects: 2,        maxScale: 1 },
+  free:     { maxProjects: 3,        maxScale: 1 },
   standard: { maxProjects: 10,       maxScale: 1 },
   pro:      { maxProjects: Infinity, maxScale: 3 },
 };
@@ -1481,7 +1698,7 @@ async function initAppVersion() {
       if (version) el.textContent = 'v' + version;
     } else {
       // 웹: 모바일 버전과 동기화 필요 (CLAUDE.md 웹 커밋 규칙 참고)
-      el.textContent = 'v1.0.1';
+      el.textContent = 'v1.1.0';
     }
   } catch(e) { /* 무시 */ }
 }
@@ -1898,7 +2115,7 @@ const UPGRADE_MESSAGES = {
   project_limit: {
     title: '프로젝트 한도에 도달했습니다',
     desc: {
-      free:     '무료 플랜은 프로젝트를 2개까지 만들 수 있습니다. Standard 또는 Pro로 업그레이드하세요.',
+      free:     '무료 플랜은 프로젝트를 3개까지 만들 수 있습니다. Standard 또는 Pro로 업그레이드하세요.',
       standard: 'Standard 플랜은 프로젝트를 10개까지 만들 수 있습니다. Pro로 업그레이드하면 무제한으로 사용할 수 있습니다.',
       pro:      '',
     },
@@ -1957,7 +2174,7 @@ function updateProject(updated) {
 // contextProjectId는 초기화 시점 이전에도 참조되므로 파일 상단에 선언
 // (let 선언은 TDZ로 인해 선언 전 접근 시 ReferenceError 발생)
 
-function navigateTo(view, projectId) {
+function navigateTo(view, projectId, opts = {}) {
   stopPlayAll();
   stopMetronome();
   // 프로젝트 뷰를 떠나기 전 즉시 저장
@@ -1966,12 +2183,18 @@ function navigateTo(view, projectId) {
     if (currentLinesEl) saveAllLines(currentProjectId, currentLinesEl);
   }
 
-  // 메인 영역(에디터+프로젝트)과 라이브러리 뷰는 완전히 분리
-  document.getElementById('main-area')?.classList.toggle('hidden', view === 'library');
+  // 뷰 표시/숨김
   document.getElementById('view-editor').classList.toggle('hidden', view !== 'editor');
   document.getElementById('view-project').classList.toggle('hidden', view !== 'project');
   document.getElementById('view-library')?.classList.toggle('hidden', view !== 'library');
-  document.getElementById('btn-library')?.classList.toggle('active', view === 'library');
+
+  // 통합 헤더: 에디터·라이브러리에서 표시, 프로젝트 뷰에서 숨김
+  const headerEl = document.getElementById('main-header');
+  if (headerEl) {
+    headerEl.classList.toggle('hidden', view === 'project');
+    document.getElementById('tab-editor')?.classList.toggle('active', view === 'editor');
+    document.getElementById('tab-library')?.classList.toggle('active', view === 'library');
+  }
 
   if (view === 'library') {
     closeSidebar();
@@ -1987,6 +2210,15 @@ function navigateTo(view, projectId) {
     // 첫 번째 엔트리 자동 선택 → #lib-canvas 초기 표시
     const _initEntries = (window.chordsLibrary || {})[_libRoot] || [];
     if (_initEntries.length > 0) selectLibEntry(0);
+    // .lib-bottom 초기 높이 고정 (한 번만)
+    requestAnimationFrame(() => {
+      const bottom = document.querySelector('.lib-bottom');
+      if (bottom && !bottom.dataset.heightFixed) {
+        bottom.style.height = bottom.getBoundingClientRect().height + 'px';
+        bottom.style.flex   = 'none';
+        bottom.dataset.heightFixed = '1';
+      }
+    });
     return;
   }
 
@@ -1994,7 +2226,7 @@ function navigateTo(view, projectId) {
     contextProjectId = projectId || null;
     populateProjectSelect();
     closeSidebar();
-    resizeCanvas();
+    if (opts.skipResize) draw(); else requestAnimationFrame(resizeCanvas);
     if (isMobileOrTablet() && screen.orientation?.lock) {
       screen.orientation.lock('landscape').catch(() => {});
     }
@@ -2008,6 +2240,10 @@ function navigateTo(view, projectId) {
     }
   }
   renderSidebar();
+}
+
+function switchMainTab(tab) {
+  navigateTo(tab);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2040,20 +2276,22 @@ function closeSidebar() {
 
 function renderSidebar() {
   const projects = loadProjects();
-  const pinned = projects.filter(p => p.pinned).sort((a, b) => a.pinnedOrder - b.pinnedOrder);
-  const recent = projects.filter(p => !p.pinned).sort((a, b) => {
+  const important = projects.filter(p => p.important).sort((a, b) => (a.importantOrder || 0) - (b.importantOrder || 0));
+  const pinned    = projects.filter(p => p.pinned && !p.important).sort((a, b) => (a.pinnedOrder || 0) - (b.pinnedOrder || 0));
+  const recent    = projects.filter(p => !p.pinned && !p.important).sort((a, b) => {
     if (a.id === currentProjectId) return -1;
     if (b.id === currentProjectId) return 1;
     return b.updatedAt - a.updatedAt;
   });
 
-  renderSidebarList('sidebar-pinned', pinned, true);
-  renderSidebarList('sidebar-recent', recent, false);
+  renderSidebarList('sidebar-important', important, 'important');
+  renderSidebarList('sidebar-pinned',    pinned,    'pinned');
+  renderSidebarList('sidebar-recent',    recent,    'recent');
 
   lucide.createIcons();
 }
 
-function renderSidebarList(containerId, projects, isPinned) {
+function renderSidebarList(containerId, projects, sectionType) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
@@ -2081,8 +2319,15 @@ function renderSidebarList(containerId, projects, isPinned) {
     if (project.pinned) pinBtn.classList.add('pinned');
     pinBtn.onclick = (e) => { e.stopPropagation(); togglePin(project.id); };
 
+    const starBtn = document.createElement('button');
+    starBtn.innerHTML = '<i data-lucide="star"></i>';
+    starBtn.title = project.important ? '중요 해제' : '중요';
+    if (project.important) starBtn.classList.add('important');
+    starBtn.onclick = (e) => { e.stopPropagation(); toggleImportant(project.id); };
+
     actions.appendChild(renameBtn);
     actions.appendChild(pinBtn);
+    actions.appendChild(starBtn);
 
     item.appendChild(name);
     item.appendChild(actions);
@@ -2100,11 +2345,12 @@ function renderSidebarList(containerId, projects, isPinned) {
     item.addEventListener('pointerup', () => clearTimeout(holdTimer));
     item.addEventListener('pointerleave', () => clearTimeout(holdTimer));
 
-    // 고정 항목: 드래그 가능
-    if (isPinned) {
+    // 중요/고정 항목: 드래그로 순서 변경 가능
+    if (sectionType === 'important' || sectionType === 'pinned') {
       item.draggable = true;
       item.addEventListener('dragstart', e => {
         e.dataTransfer.setData('sidebar-project-id', project.id);
+        e.dataTransfer.setData('sidebar-section-type', sectionType);
         item.style.opacity = '0.4';
       });
       item.addEventListener('dragend', () => { item.style.opacity = ''; });
@@ -2112,8 +2358,10 @@ function renderSidebarList(containerId, projects, isPinned) {
       item.addEventListener('drop', e => {
         e.preventDefault();
         const dragId = e.dataTransfer.getData('sidebar-project-id');
-        if (dragId && dragId !== project.id) {
-          reorderPinned(dragId, project.id);
+        const dragSection = e.dataTransfer.getData('sidebar-section-type');
+        if (dragId && dragId !== project.id && dragSection === sectionType) {
+          if (sectionType === 'important') reorderImportant(dragId, project.id);
+          else reorderPinned(dragId, project.id);
         }
       });
     }
@@ -2128,6 +2376,9 @@ function togglePin(projectId) {
   if (!p) return;
   p.pinned = !p.pinned;
   if (p.pinned) {
+    // 중요와 상호 배타적
+    p.important = false;
+    p.importantOrder = 0;
     const maxOrder = Math.max(0, ...projects.filter(x => x.pinned).map(x => x.pinnedOrder || 0));
     p.pinnedOrder = maxOrder + 1;
   } else {
@@ -2166,6 +2417,81 @@ function reorderPinned(dragId, targetId) {
   renderSidebar();
 }
 
+function toggleImportant(projectId) {
+  const projects = loadProjects();
+  const p = projects.find(x => x.id === projectId);
+  if (!p) return;
+  if (!p.important) {
+    // 중요 추가 시 최대 3개 제한
+    const importantCount = projects.filter(x => x.important).length;
+    if (importantCount >= 3) {
+      alert('중요 항목은 최대 3개까지 등록할 수 있습니다.');
+      return;
+    }
+    // 즐겨찾기와 상호 배타적
+    p.pinned = false;
+    p.pinnedOrder = 0;
+    const maxOrder = Math.max(0, ...projects.filter(x => x.important).map(x => x.importantOrder || 0));
+    p.importantOrder = maxOrder + 1;
+    p.important = true;
+  } else {
+    p.important = false;
+    p.importantOrder = 0;
+  }
+  saveProjects(projects);
+  renderSidebar();
+}
+
+function reorderImportant(dragId, targetId) {
+  const projects = loadProjects();
+  const dragP = projects.find(p => p.id === dragId);
+  const targetP = projects.find(p => p.id === targetId);
+  if (!dragP || !targetP) return;
+  const dragOrder = dragP.importantOrder;
+  dragP.importantOrder = targetP.importantOrder;
+  targetP.importantOrder = dragOrder;
+  saveProjects(projects);
+  renderSidebar();
+}
+
+/**
+ * 구독 만료 시 활성 유지할 프로젝트를 우선순위에 따라 자동 선택.
+ * 우선순위: 중요 → 즐겨찾기 → 최근 수정순
+ * @param {Array} projects - 전체 프로젝트 배열
+ * @param {number} limit   - 활성 유지할 프로젝트 수 (기본 2)
+ * @returns {Array} 활성 유지할 프로젝트 배열
+ */
+function selectActiveProjects(projects, limit = 2) {
+  const selected = [];
+  const usedIds  = new Set();
+
+  // 1순위: 중요 (importantOrder 오름차순)
+  projects
+    .filter(p => p.important)
+    .sort((a, b) => (a.importantOrder || 0) - (b.importantOrder || 0))
+    .forEach(p => {
+      if (selected.length < limit) { selected.push(p); usedIds.add(p.id); }
+    });
+
+  // 2순위: 즐겨찾기 (pinnedOrder 오름차순)
+  projects
+    .filter(p => p.pinned && !usedIds.has(p.id))
+    .sort((a, b) => (a.pinnedOrder || 0) - (b.pinnedOrder || 0))
+    .forEach(p => {
+      if (selected.length < limit) { selected.push(p); usedIds.add(p.id); }
+    });
+
+  // 3순위: 최근 수정순
+  projects
+    .filter(p => !usedIds.has(p.id))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .forEach(p => {
+      if (selected.length < limit) { selected.push(p); usedIds.add(p.id); }
+    });
+
+  return selected;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 프로젝트 생성
 // ═══════════════════════════════════════════════════════════════
@@ -2195,6 +2521,8 @@ function confirmCreateProject() {
     name,
     pinned: false,
     pinnedOrder: 0,
+    important: false,
+    importantOrder: 0,
     capo: 0,
     bpm: 120,
     createdAt: Date.now(),
@@ -3893,55 +4221,55 @@ function buildEditModalUI() {
   const builder = document.createElement('div');
   builder.className = 'chord-builder';
 
-  // 행 1: accidental + root
-  builder.appendChild(createMeRow([
-    createMeAccToggle(),
-    createDividerEl(),
-    createMeGroup('me-root-group')
-  ]));
-
-  // 행 2: triad
-  builder.appendChild(createMeRow([
-    createLabelEl('3화음'),
-    createMeGroup('me-triad-group')
-  ]));
-
-  // 행 3: seventh
-  builder.appendChild(createMeRow([
-    createLabelEl('7음'),
-    createMeGroup('me-seventh-group')
-  ]));
-
-  // 행 4: func
-  builder.appendChild(createMeRow([
-    createLabelEl('기능'),
-    createMeGroup('me-func-group')
-  ]));
-
-  // 행 5: tension
-  builder.appendChild(createMeRow([
-    createLabelEl('텐션'),
-    createMeGroup('me-tension-group')
-  ]));
-
-  // 행 6: bass
-  builder.appendChild(createMeRow([
-    createLabelEl('분수'),
-    createMeGroup('me-bass-group')
-  ]));
-
-  // 미리보기
+  // 상단: accidental + 코드명
+  const builderHeader = document.createElement('div');
+  builderHeader.className = 'builder-header';
+  builderHeader.appendChild(createMeAccToggle());
   const preview = document.createElement('div');
   preview.className = 'chord-preview';
-  const prevLabel = document.createElement('span');
-  prevLabel.className = 'preview-label';
-  prevLabel.textContent = '코드명';
   const chordDisp = document.createElement('span');
   chordDisp.id = 'me-chord-display';
   chordDisp.className = 'chord-display';
-  preview.appendChild(prevLabel);
+  const suggestEl = document.createElement('span');
+  suggestEl.id = 'me-chord-suggestions';
+  suggestEl.className = 'chord-suggestions';
   preview.appendChild(chordDisp);
-  builder.appendChild(preview);
+  preview.appendChild(suggestEl);
+  builderHeader.appendChild(preview);
+  builder.appendChild(builderHeader);
+
+  // 수평 컬럼 피커
+  const columns = document.createElement('div');
+  columns.className = 'builder-columns';
+  [
+    { label: '근음',  id: 'me-root-group'    },
+    { label: '3화음', id: 'me-triad-group'   },
+    { label: '7음',   id: 'me-seventh-group' },
+    { label: '기능',  id: 'me-func-group'    },
+    { label: '텐션',  id: 'me-tension-group' },
+    { label: '분수',  id: 'me-bass-group'    },
+  ].forEach((def, i) => {
+    if (i > 0) {
+      const d = document.createElement('div');
+      d.className = 'col-divider';
+      columns.appendChild(d);
+    }
+    const col = document.createElement('div');
+    col.className = 'builder-col';
+    const lbl = document.createElement('div');
+    lbl.className = 'col-label';
+    lbl.textContent = def.label;
+    const wrap = document.createElement('div');
+    wrap.className = 'col-wheel-wrap';
+    const scroll = document.createElement('div');
+    scroll.className = 'col-scroll';
+    scroll.id = def.id;
+    wrap.appendChild(scroll);
+    col.appendChild(lbl);
+    col.appendChild(wrap);
+    columns.appendChild(col);
+  });
+  builder.appendChild(columns);
 
   // 툴바
   const toolbar = document.createElement('div');
@@ -4102,6 +4430,14 @@ function createMeAccToggle() {
 
 // ── me_* 상태 관리 함수 ──
 function meSetAccidental(mode) {
+  // 음높이(인덱스) 유지하며 표기법만 변환
+  const oldRoots = me_accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const newRoots = mode           === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const rootIdx = oldRoots.indexOf(me_root);
+  if (rootIdx !== -1) me_root = newRoots[rootIdx];
+  const bassIdx = oldRoots.indexOf(me_bass);
+  if (bassIdx !== -1) me_bass = newRoots[bassIdx];
+
   me_accidental = mode;
   const sharp = document.getElementById('me-acc-sharp');
   const flat  = document.getElementById('me-acc-flat');
@@ -4127,91 +4463,179 @@ function meRenderRootBtns() {
   const group = document.getElementById('me-root-group');
   if (!group) return;
   group.innerHTML = '';
-  roots.forEach(r => {
+  roots.forEach((r, i) => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (r === me_root ? ' active' : '');
     btn.textContent = r;
-    btn.onclick = () => { me_root = r; meRenderRootBtns(); meUpdateChordDisplay(); };
+    btn.onclick = () => {
+      me_root = r;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      meUpdateChordDisplay();
+    };
     group.appendChild(btn);
+  });
+  initWheelPicker(group, () => roots.indexOf(me_root), (i) => {
+    me_root = roots[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
   });
 }
 
 function meRenderTriadBtns() {
+  const TRIAD_VALS   = ['', 'm', 'aug', 'dim'];
+  const TRIAD_LABELS = ['M', 'm', 'aug', 'dim'];
   const group = document.getElementById('me-triad-group');
   if (!group) return;
   group.innerHTML = '';
-  [['','M'], ['m','m'], ['aug','aug'], ['dim','dim']].forEach(([val, label]) => {
+  TRIAD_VALS.forEach((val, i) => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (me_triad === val ? ' active' : '');
-    btn.textContent = label;
-    btn.onclick = () => { me_triad = val; meRenderTriadBtns(); meUpdateChordDisplay(); };
+    btn.textContent = TRIAD_LABELS[i];
+    btn.onclick = () => {
+      me_triad = val;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      meUpdateChordDisplay();
+    };
     group.appendChild(btn);
+  });
+  initWheelPicker(group, () => Math.max(0, TRIAD_VALS.indexOf(me_triad)), (i) => {
+    me_triad = TRIAD_VALS[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
   });
 }
 
 function meRenderSeventhBtns() {
+  const SEVENTH_VALS   = ['', 'M7', '7', '6'];
+  const SEVENTH_LABELS = ['-', 'M7', '7', '6'];
   const group = document.getElementById('me-seventh-group');
   if (!group) return;
   group.innerHTML = '';
-  [['','없음'], ['M7','M7'], ['7','7'], ['6','6']].forEach(([val, label]) => {
+  SEVENTH_VALS.forEach((val, i) => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (me_seventh === val ? ' active' : '');
-    btn.textContent = label;
-    btn.onclick = () => { me_seventh = val; meRenderSeventhBtns(); meUpdateChordDisplay(); };
+    btn.textContent = SEVENTH_LABELS[i];
+    btn.onclick = () => {
+      me_seventh = val;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      meUpdateChordDisplay();
+    };
     group.appendChild(btn);
+  });
+  initWheelPicker(group, () => Math.max(0, SEVENTH_VALS.indexOf(me_seventh)), (i) => {
+    me_seventh = SEVENTH_VALS[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
   });
 }
 
 function meRenderFuncBtns() {
+  const FUNC_VALS   = ['', 'sus4', 'add9', 'b5'];
+  const FUNC_LABELS = ['-', 'sus4', 'add9', '(b5)'];
   const group = document.getElementById('me-func-group');
   if (!group) return;
   group.innerHTML = '';
-  [['','없음'], ['sus4','sus4'], ['add9','add9'], ['b5','(b5)']].forEach(([val, label]) => {
+  FUNC_VALS.forEach((val, i) => {
     const btn = document.createElement('button');
     btn.className = 'sel-btn' + (me_func === val ? ' active' : '');
-    btn.textContent = label;
-    btn.onclick = () => { me_func = val; meRenderFuncBtns(); meUpdateChordDisplay(); };
+    btn.textContent = FUNC_LABELS[i];
+    btn.onclick = () => {
+      me_func = val;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      meUpdateChordDisplay();
+    };
     group.appendChild(btn);
+  });
+  initWheelPicker(group, () => Math.max(0, FUNC_VALS.indexOf(me_func)), (i) => {
+    me_func = FUNC_VALS[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
   });
 }
 
 function meRenderTensionBtns() {
+  const TENSION_VALS   = ['', 'b9', '9', '#9', '11', '#11', 'b13', '13'];
+  const TENSION_LABELS = ['-', 'b9', '9', '#9', '11', '#11', 'b13', '13'];
   const group = document.getElementById('me-tension-group');
   if (!group) return;
   group.innerHTML = '';
-  ['b9','9','#9','11','#11','b13','13'].forEach(t => {
+  const curTension = me_tensions[0] ?? '';
+  TENSION_VALS.forEach((val, i) => {
     const btn = document.createElement('button');
-    btn.className = 'sel-btn toggle' + (me_tensions.includes(t) ? ' active' : '');
-    btn.textContent = t;
+    btn.className = 'sel-btn' + (curTension === val ? ' active' : '');
+    btn.textContent = TENSION_LABELS[i];
     btn.onclick = () => {
-      const idx = me_tensions.indexOf(t);
-      idx !== -1 ? me_tensions.splice(idx, 1) : me_tensions.push(t);
-      meRenderTensionBtns();
+      me_tensions = val ? [val] : [];
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
       meUpdateChordDisplay();
     };
     group.appendChild(btn);
+  });
+  initWheelPicker(group, () => Math.max(0, TENSION_VALS.indexOf(curTension)), (i) => {
+    me_tensions = TENSION_VALS[i] ? [TENSION_VALS[i]] : [];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
   });
 }
 
 function meRenderBassBtns() {
   const roots = me_accidental === 'sharp' ? ROOTS_SHARP : ROOTS_FLAT;
+  const vals   = ['', ...roots];
+  const labels = ['-', ...roots];
   const group = document.getElementById('me-bass-group');
   if (!group) return;
   group.innerHTML = '';
-
-  const noneBtn = document.createElement('button');
-  noneBtn.className = 'sel-btn' + (me_bass === '' ? ' active' : '');
-  noneBtn.textContent = '없음';
-  noneBtn.onclick = () => { me_bass = ''; meRenderBassBtns(); meUpdateChordDisplay(); };
-  group.appendChild(noneBtn);
-
-  roots.forEach(r => {
+  vals.forEach((v, i) => {
     const btn = document.createElement('button');
-    btn.className = 'sel-btn' + (me_bass === r ? ' active' : '');
-    btn.textContent = r;
-    btn.onclick = () => { me_bass = r; meRenderBassBtns(); meUpdateChordDisplay(); };
+    btn.className = 'sel-btn' + (me_bass === v ? ' active' : '');
+    btn.textContent = labels[i];
+    btn.onclick = () => {
+      me_bass = v;
+      group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      group._scrollToIdx?.(i, true);
+      meUpdateChordDisplay();
+    };
     group.appendChild(btn);
   });
+  initWheelPicker(group, () => Math.max(0, vals.indexOf(me_bass)), (i) => {
+    me_bass = vals[i];
+    group.querySelectorAll('.sel-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+    meUpdateChordDisplay();
+  });
+}
+
+function meGetChordFretArray() {
+  const barreMap = buildBarreMap(me_dots, me_barre);
+  const arr = [];
+  for (let s = 5; s >= 0; s--) {
+    if (me_openMute[s] === 'mute') { arr.push(null); continue; }
+    const sd  = me_dots.filter(d => d.s === s);
+    const dot = sd.length > 0 ? sd.reduce((a, b) => a.f >= b.f ? a : b) : undefined;
+    const bf  = barreMap[s];
+    const toFret = f => (me_fretNumber - 2) + f;
+    if (dot !== undefined && bf !== undefined) arr.push(toFret(Math.max(dot.f, bf)));
+    else if (dot !== undefined)  arr.push(toFret(dot.f));
+    else if (bf  !== undefined)  arr.push(toFret(bf));
+    else arr.push(0);
+  }
+  return arr;
+}
+
+function meSuggestChordNames() {
+  chordSuggester.options.spellingMode = me_accidental;
+  return chordSuggester.suggest(meGetChordFretArray());
+}
+
+function meUpdateChordSuggestions() {
+  const el = document.getElementById('me-chord-suggestions');
+  if (!el) return;
+  const names = meSuggestChordNames();
+  el.innerHTML = names.map(n => `<span class="chord-suggest-item">${n}</span>`).join('');
 }
 
 function meUpdateChordDisplay() {
@@ -4295,6 +4719,7 @@ function meDraw() {
   };
   drawCanvas(c, me_RATIO, data);
   meUpdateBarreBtns();
+  meUpdateChordSuggestions();
 }
 
 function meUpdateBarreBtns() {
@@ -4318,13 +4743,13 @@ function meUpdateBarreBtns() {
     }
     const btn = document.createElement('button');
     btn.textContent = 'B';
-    const left = meTL + (f - 0.5) * meFW - 12;
-    const top  = meTT - meDS - 16;
-    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:24px;height:24px;
+    const left = meTL + (f - 0.5) * meFW - 24;
+    const top  = meTT - meDS - 32;
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:48px;height:48px;
       border-radius:50%;border:1.5px solid #888;
       background:${me_barre[f] ? '#1a1714' : '#fff'};
       color:${me_barre[f] ? '#fff' : '#888'};
-      font-size:11px;font-family:'Pretendard',sans-serif;
+      font-size:22px;font-family:'Pretendard',sans-serif;
       cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;`;
     btn.onclick = () => {
       if (!me_barre[f]) {
@@ -4608,7 +5033,7 @@ function confirmImport(mode) {
   if (mode === 'new') {
     const name = document.getElementById('import-new-name').value.trim();
     if (!name) { alert('프로젝트 이름을 입력하세요.'); return; }
-    const p = { id: genId(), name, pinned: false, pinnedOrder: 0, capo: 0, bpm: 120,
+    const p = { id: genId(), name, pinned: false, pinnedOrder: 0, important: false, importantOrder: 0, capo: 0, bpm: 120,
                 colCount: 4, createdAt: Date.now(), updatedAt: Date.now(), chords: [], arrangement: [] };
     const list = loadProjects(); list.push(p); saveProjects(list); targetId = p.id;
   } else {
@@ -4669,6 +5094,9 @@ window._handleShareImport = async function(rawCode) {
 // 초기 렌더링
 // ═══════════════════════════════════════════════════════════════
 (function init() {
+  renderRootBtns();
+  renderBassBtns();
+  initStaticWheelPickers();
   renderSidebar();
   populateProjectSelect();
   lucide.createIcons();
@@ -4722,22 +5150,8 @@ const LIB_VIEWER_RATIO = LIB_VIEWER_W / BASE_W;
 const LIB_MINI_W   = 120;
 const LIB_MINI_RATIO = LIB_MINI_W / BASE_W;
 
-function openLibrary() {
-  history.pushState({ view: 'library' }, '');
-  navigateTo('library');
-}
-
-function closeLibrary() {
-  navigateTo('editor');
-}
-
-// 브라우저/안드로이드 뒤로가기 → 라이브러리에서 메인으로 복귀
-window.addEventListener('popstate', () => {
-  const libEl = document.getElementById('view-library');
-  if (libEl && !libEl.classList.contains('hidden')) {
-    navigateTo('editor');
-  }
-});
+function openLibrary()  { navigateTo('library'); }
+function closeLibrary() { navigateTo('editor');  }
 
 function renderLibRootTabs() {
   const roots   = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -4853,13 +5267,14 @@ function _drawLibCanvas(canvas, ratio, entry, nameOverride, fingeringIdx = 0) {
 
   const dotsArr = frets
     .map((f, s) => f !== null && f > 0
-      ? { s, f: f - fretOffset, n: _libFingerMode ? (fingering?.[s] ?? 0) : 0 }
+      ? { s, f: f - fretOffset, n: _libFingerMode ? (typeof fingering?.[s] === 'number' ? fingering[s] : 0) : 0 }
       : null)
     .filter(Boolean);
 
-  // barre 키도 절대 프렛 → 슬롯 번호로 정규화
+  // barre 키도 절대 프렛 → 슬롯 번호로 정규화 (운지별 barre 우선)
+  const activeBarre = entry.barres?.[fingeringIdx] ?? entry.barres?.[0] ?? entry.barre ?? {};
   const normBarre = {};
-  Object.entries(entry.barre || {}).forEach(([f, v]) => {
+  Object.entries(activeBarre).forEach(([f, v]) => {
     normBarre[Number(f) - fretOffset] = v;
   });
 
@@ -4927,13 +5342,13 @@ function openVoicingModal(sharpName, cardEl) {
   const overlay = document.getElementById('lib-voicing-overlay');
   if (!modal) return;
 
-  // 클릭 카드 중심을 transform-origin으로 설정 (lib-cards-area 기준 좌표)
-  const areaEl = document.querySelector('.lib-cards-area');
-  if (areaEl && cardEl) {
-    const ar = areaEl.getBoundingClientRect();
+  // 클릭 카드 중심을 transform-origin으로 설정 (lib-bottom 기준 좌표)
+  const bottomEl = document.querySelector('.lib-bottom');
+  if (bottomEl && cardEl) {
+    const br = bottomEl.getBoundingClientRect();
     const cr = cardEl.getBoundingClientRect();
-    const ox = cr.left + cr.width  / 2 - ar.left;
-    const oy = cr.top  + cr.height / 2 - ar.top;
+    const ox = cr.left + cr.width  / 2 - br.left;
+    const oy = cr.top  + cr.height / 2 - br.top;
     modal.style.transformOrigin = `${ox}px ${oy}px`;
   }
 
@@ -5036,6 +5451,7 @@ function _libMatch(name, q) {
 let _libSearchResults = [];
 
 function onLibSearch(query) {
+  closeVoicingModal();
   const q = (query || '').trim();
   if (!q) { _libSearchResults = []; return; }
 
@@ -5161,7 +5577,7 @@ function importLibChordToProject() {
 
   dots = entry.frets
     .map((f, s) => (f !== null && f > 0)
-      ? { s, f: f - fretOffset, n: _libFingerMode ? (activeFingering?.[s] ?? 0) : 0 }
+      ? { s, f: f - fretOffset, n: _libFingerMode ? (typeof activeFingering?.[s] === 'number' ? activeFingering[s] : 0) : 0 }
       : null)
     .filter(Boolean);
 
@@ -5171,7 +5587,8 @@ function importLibChordToProject() {
   });
 
   barreActive = {};
-  Object.entries(entry.barre).forEach(([f, v]) => {
+  const importBarre = entry.barres?.[_libFingeringIdx] ?? entry.barres?.[0] ?? entry.barre ?? {};
+  Object.entries(importBarre).forEach(([f, v]) => {
     barreActive[parseInt(f) - fretOffset] = v;
   });
 
@@ -5185,15 +5602,16 @@ function importLibChordToProject() {
   const rootNote  = rootMatch ? rootMatch[1] : 'A';
   const comp = window.qualityToComponents ? window.qualityToComponents(entry.quality)
     : { triad: '', seventh: '', func: '', tensions: [] };
-  selectedRoot    = rootNote;
-  selectedTriad   = comp.triad;
-  selectedSeventh = comp.seventh;
-  selectedFunc    = comp.func;
-  selectedTensions = [...(comp.tensions || [])];
-  selectedBass    = '';
+  selectedRoot = rootNote;
+  selectedBass = '';
 
-  navigateTo('editor');
+  navigateTo('editor', null, { skipResize: true });
   renderRootBtns();
   renderBassBtns();
-  updateChordDisplay();
+
+  // 휠피커 UI + 상태 동시 반영
+  selectTriad(comp.triad);
+  selectSeventh(comp.seventh);
+  selectFunc(comp.func);
+  selectTension(comp.tensions?.[0] || '');
 }

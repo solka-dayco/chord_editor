@@ -189,8 +189,10 @@
         const key = entry.name + '§' + entry.frets.join(',');
         if (keyMap.has(key)) {
           keyMap.get(key).fingerings.push(entry.fingering);
+          keyMap.get(key).barres.push(entry.barre);
         } else {
           entry.fingerings = [entry.fingering];
+          entry.barres     = [entry.barre];
           keyMap.set(key, entry);
           merged.push(entry);
         }
@@ -209,17 +211,18 @@
       'M7':     { triad: '',     seventh: 'M7',  func: '',      tensions: [] },
       '7':      { triad: '',     seventh: '7',   func: '',      tensions: [] },
       'm7':     { triad: 'm',    seventh: '7',   func: '',      tensions: [] },
-      'sus4':   { triad: 'sus4', seventh: '',    func: '',      tensions: [] },
+      'sus4':   { triad: '',     seventh: '',    func: 'sus4',  tensions: [] },
       '7sus4':  { triad: '',     seventh: '7',   func: 'sus4',  tensions: [] },
-      'add9':   { triad: '',     seventh: '',    func: '',      tensions: ['9'] },
-      'sus2':   { triad: 'sus2', seventh: '',    func: '',      tensions: [] },
+      'add9':   { triad: '',     seventh: '',    func: 'add9',  tensions: [] },
+      'sus2':   { triad: '',     seventh: '',    func: 'sus2',  tensions: [] },
       'aug':    { triad: 'aug',  seventh: '',    func: '',      tensions: [] },
       'dim':    { triad: 'dim',  seventh: '',    func: '',      tensions: [] },
       'aug7':   { triad: 'aug',  seventh: '7',   func: '',      tensions: [] },
-      'dim7':   { triad: '',     seventh: '',    func: 'dim7',  tensions: [] },
+      'dim7':   { triad: 'dim',  seventh: '7',   func: '',      tensions: [] },
       'm7(b5)': { triad: 'm',    seventh: '7',   func: 'b5',    tensions: [] },
-      '6':      { triad: '',     seventh: '',    func: '',      tensions: ['6'] },
-      'm6':     { triad: 'm',    seventh: '',    func: '',      tensions: ['6'] },
+      'mM7':    { triad: 'm',    seventh: 'M7',  func: '',      tensions: [] },
+      '6':      { triad: '',     seventh: '6',   func: '',      tensions: [] },
+      'm6':     { triad: 'm',    seventh: '6',   func: '',      tensions: [] },
     };
     return map[quality] || { triad: '', seventh: '', func: '', tensions: [] };
   };
