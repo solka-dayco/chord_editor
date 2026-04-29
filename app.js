@@ -97,7 +97,14 @@ class GuitarChordSuggester {
     const flat = flatNames
       ? (Array.isArray(flatNames) ? flatNames : [flatNames])
       : sharp.map(n => GuitarChordSuggester._sharpToFlat(n));
-    this.voicingLibrary.set(key, { sharp, flat });
+    // 동일 운지에 여러 이름이 있을 경우 누적 (덮어쓰기 금지)
+    const existing = this.voicingLibrary.get(key);
+    if (existing) {
+      for (const n of sharp) if (!existing.sharp.includes(n)) existing.sharp.push(n);
+      for (const n of flat)  if (!existing.flat.includes(n))  existing.flat.push(n);
+    } else {
+      this.voicingLibrary.set(key, { sharp: [...sharp], flat: [...flat] });
+    }
   }
 
   suggest(input, opts = {}) {
@@ -108,7 +115,7 @@ class GuitarChordSuggester {
     const exact = this.voicingLibrary.get(anal.voicingKey);
     if (exact?.sharp?.length) {
       const names = this.options.spellingMode === 'flat' ? exact.flat : exact.sharp;
-      return [names[0]];
+      return names.slice(0, maxR);  // 동일 운지의 모든 코드명 반환 (최대 maxResults개)
     }
 
     const candidates = [];
@@ -870,9 +877,17 @@ function drawCanvas(c, ratio, data = null) {
   const barreFrets = [];
   Object.keys(_barreCount).filter(f => _barreCount[f] >= 2).map(Number).forEach(f => {
     if (!_barre[f]) return;
-    const same  = _dots.filter(d => d.f === f);
-    const minS  = Math.min(...same.map(d => d.s));
-    const maxS  = Math.max(...same.map(d => d.s));
+    // barreRange: 라이브러리 엔트리가 제공하는 커버 범위 우선 사용 (Rule 1/2/3)
+    // 없으면 dots 기반 minS/maxS 자동 계산 (에디터 캔버스 기본 동작)
+    let minS, maxS;
+    if (data && data.barreRange) {
+      minS = data.barreRange.min;
+      maxS = data.barreRange.max;
+    } else {
+      const same = _dots.filter(d => d.f === f);
+      minS = Math.min(...same.map(d => d.s));
+      maxS = Math.max(...same.map(d => d.s));
+    }
     const key   = BARRE_KEYS[maxS - minS + 1];
     if (!key || !IMAGES[key]) return;
     barreFrets.push(f);
@@ -5263,6 +5278,8 @@ function _drawLibCanvas(canvas, ratio, entry, nameOverride, fingeringIdx = 0) {
   Object.entries(activeBarre).forEach(([f, v]) => {
     normBarre[Number(f) - fretOffset] = v;
   });
+  // barreRange: 바레 라인 커버 범위 (canvas string index 기준, 운지별)
+  const barreRange = entry.barreRanges?.[fingeringIdx] ?? entry.barreRanges?.[0] ?? entry.barreRange ?? null;
 
   drawCanvas(canvas.getContext('2d'), ratio, {
     root: '', triad: '', seventh: '', func: '', tensions: [], bass: '',
@@ -5270,6 +5287,7 @@ function _drawLibCanvas(canvas, ratio, entry, nameOverride, fingeringIdx = 0) {
     dots:          dotsArr,
     openMute:      entry.openMute,
     barre:         normBarre,
+    barreRange,
     fretNumber:    entry.fretNumber,
     fingerNumMode: _libFingerMode,
   });
@@ -5583,21 +5601,21 @@ function importLibChordToProject() {
   const fnBtn = document.getElementById('btn-finger-num');
   if (fnBtn) fnBtn.classList.toggle('active', fingerNumMode);
 
-  // 코드명 구성요소 설정
-  const rootMatch = dispName.match(/^([A-G][#b]?)/);
-  const rootNote  = rootMatch ? rootMatch[1] : 'A';
-  const comp = window.qualityToComponents ? window.qualityToComponents(entry.quality)
-    : { triad: '', seventh: '', func: '', tensions: [] };
-  selectedRoot = rootNote;
-  selectedBass = '';
+  // 코드명 전체 파싱: 근음 → 3화음 → 7음 → 기능 → 텐션 → 분수
+  // parseChordNameToComponents가 모든 구성요소를 한 번에 추출
+  const comp = parseChordNameToComponents(dispName)
+    || { root: 'C', bass: '', triad: '', seventh: '', func: '', tension: '' };
+  selectedRoot = comp.root;
+  selectedBass = comp.bass || '';
 
   navigateTo('editor', null, { skipResize: true });
   renderRootBtns();
   renderBassBtns();
 
-  // 휠피커 UI + 상태 동시 반영
+  // 휠피커 UI + 상태 동시 반영 (순서: 근음 → 3화음 → 7음 → 기능 → 텐션 → 분수)
   selectTriad(comp.triad);
   selectSeventh(comp.seventh);
   selectFunc(comp.func);
-  selectTension(comp.tensions?.[0] || '');
+  selectTension(comp.tension || '');
+  selectBass(comp.bass || '');
 }

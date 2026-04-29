@@ -178,7 +178,83 @@ CHORD_PATTERN ──┴─────────► Step1: PATTERN 파싱     
 | 4. 운지 병합 | `name + frets` 동일 엔트리 → `fingerings[]` 배열로 통합 (1개여도 배열) |
 
 **quality 정렬 우선순위:**  
-`M → m → M7 → 7 → m7 → sus4 → 7sus4 → add9 → sus2 → aug → dim → aug7 → dim7 → m7(b5) → 6 → m6`
+`M → m → M7 → 7 → m7 → sus4 → 7sus4 → add9 → sus2 → aug → dim → aug7 → dim7 → m7(b5) → 6 → m6 → slash → hybrid → tension`
+
+---
+
+## ⚠️ ABSOLUTE RULE — 바레 프렛·커버 범위 탐지 규칙 (절대 변경 금지)
+
+> **이 규칙은 캔버스 렌더링 정확도의 핵심이다. 절대 임의로 변경하지 말 것.**
+
+### 바레 프렛 결정 (`chords-library.js`)
+
+`CHORD_PATTERN`에서 `barre: true`인 패턴은 바레 프렛이 항상 `r`(근음 프렛)이 아니다.  
+**손가락 번호 1(= index finger)이 2회 이상 등장하는 실제 프렛을 바레 프렛으로 결정한다.**
+
+```js
+// ✅ 올바른 구현 (chords-library.js buildLibrary 내부)
+if (pat.barre) {
+  const oneIdxs = fingerArr.reduce((acc, f, i) => { if (f === 1) acc.push(i); return acc; }, []);
+  const barreFret = oneIdxs.length >= 2 ? (frets[oneIdxs[0]] ?? r) : r;
+  barreObj = { [barreFret]: true };
+}
+
+// ❌ 절대 금지 — 항상 r을 바레 프렛으로 쓰는 구식 코드
+// barreObj = pat.barre ? { [r]: true } : {};
+```
+
+### 바레 커버 범위 결정 (fingers 값 기준)
+
+아래 규칙은 `chord-voicings.js` 데이터 작성 시, 그리고 `chords-library.js` 렌더링 해석 시 모두 동일하게 적용된다.  
+fingers 문자열은 **6번줄→1번줄 순서**로 기술한다.
+
+#### 규칙 1 — 1번줄 시작 연속 패턴
+1번줄(마지막 위치)부터 빈 칸(x) 없이 숫자가 연속으로 채워지고, `1`이 2개 이상 등장하면  
+**바레는 1번줄부터 연속 구간 끝까지** 적용한다.
+
+```
+fingers(6→1): x x 1 1 3 1
+                      ↑연속 구간(4번줄~1번줄)
+캔버스 바레: x x [1 1 1 1]  ← 3 위치도 바레에 포함
+```
+
+#### 규칙 2 — 1 사이에 간격(다른 숫자 또는 x)이 있는 패턴
+`1`과 `1` 사이에 다른 숫자 또는 x가 끼어 있어도 **처음 1 ~ 끝 1 범위 전체**에 바레를 적용한다.
+
+```
+fingers(6→1): x 3 1 1 1 x  → 캔버스 바레: x x [1 1 1] x
+fingers(6→1): x 3 1 x 1 1  → 캔버스 바레: x x [1 1 1 1]  ← x 간격 포함
+```
+
+#### 규칙 3 — 규칙 1과 규칙 2가 혼합된 패턴 → 규칙 1 우선
+1번줄부터 연속 블록(Rule 1) 안에 1이 2개 이상 있으면서, 블록 바깥에도 1이 있을 경우(Rule 2)  
+→ **규칙 1을 따른다**: 1번줄(canvas 0)부터 가장 먼 1 위치까지 전체에 바레를 적용한다.
+
+```
+fingers(6→1): 1 x 1 2 1 3
+              └──────────── 연속블록(1번줄~4번줄): 1이 2번(3번줄·2번줄)
+              ↑ 6번줄에 고립된 1 (Rule 2 조건)
+캔버스 바레: [1 1 1 1 1 1]  ← 1번줄부터 6번줄까지 전부
+```
+
+**물리적 근거:** 인간의 검지(finger 1)는 옆면으로 모든 현을 한 번에 눌러 풀 바레를 만들거나,  
+첫 번째 마디가 꺾이는 구조를 이용해 2~3줄만 누르는 하프 바레를 만든다.  
+Rule 1/3이 적용되는 패턴은 풀 바레 — 검지가 1번줄부터 가장 먼 현까지 한꺼번에 눌리는 형태다.
+
+### 바레 커버 범위 렌더링 (`app.js drawCanvas`)
+
+규칙 1/2/3의 계산 결과는 **`chords-library.js`에서 `barreRange: { min, max }`로 엔트리에 저장**되고,  
+`_drawLibCanvas` → `drawCanvas`로 전달되어 바레 라인 그리기에 사용된다.
+
+```
+chords-library.js → entry.barreRange = { min, max }  (canvas string index 기준)
+_drawLibCanvas    → data.barreRange 로 전달
+drawCanvas        → data.barreRange가 있으면 dots 기반 계산 대신 이 값 사용
+```
+
+- `barreRange`가 **없는** 경우(에디터 캔버스 등): 기존 dots 기반 minS/maxS 자동 계산 유지
+- `barreRange`가 **있는** 경우(라이브러리 뷰어): 미리 계산된 min/max 사용  
+→ `drawCanvas` 내부 barreRange 분기 로직을 임의로 삭제하지 말 것.
 
 ---
 

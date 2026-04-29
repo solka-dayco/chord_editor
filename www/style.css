@@ -2582,7 +2582,7 @@ canvas {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  padding: 8px;
+  padding: 8px 8px 24px;
   align-content: start;
 }
 
