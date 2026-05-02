@@ -983,6 +983,7 @@ function applyFirstSuggestion() {
   applyChordSuggestion(names[0]);
   _chordDirty = false;
   updateApplyBtn();
+  analytics.track('chord_applied', { chord_name: names[0] });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1155,12 +1156,14 @@ async function _doSavePNG(scale) {
       const SaveImage = window.Capacitor.Plugins.SaveImage;
       await SaveImage.saveToGallery({ base64, fileName: fileName.replace(/[^\w.\-]/g, '_') });
       showSaveToast();
-    } catch (e) { console.error('저장 실패:', e); }
+      analytics.track('image_saved', { scale, source: 'editor', success: true });
+    } catch (e) { console.error('저장 실패:', e); analytics.track('image_saved', { scale, source: 'editor', success: false }); }
   } else {
     const link = document.createElement('a');
     link.download = fileName;
     link.href = exp.toDataURL('image/png');
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    analytics.track('image_saved', { scale, source: 'editor', success: true });
   }
 }
 
@@ -1335,6 +1338,7 @@ async function strumChord() {
   activeSources = [];
   const notes = calcStringNotes().sort((a, b) => b.s - a.s);
   if (!notes.length) return;
+  analytics.track('chord_played', { chord_name: buildChordName(), source: 'editor' });
   const DURATION = 2.5;
   const INTERVAL = 0.075;
   const now = audioCtx.currentTime + 0.05;
@@ -1358,6 +1362,14 @@ document.getElementById('finger-group').style.opacity = fingerNumMode ? '1' : '0
 const _fd = document.getElementById('fret-number-display');
 if (_fd) _fd.textContent = String(currentFretNumber);
 setupOrientationListener();
+
+// ── 앱 시작 이벤트 ──────────────────────────────────────────
+// analytics는 SUPABASE_URL 상수 정의 이후에 초기화되므로
+// 여기서는 setTimeout으로 다음 틱에 호출 (SDK 초기화 타이밍 보장)
+setTimeout(() => analytics.track('app_open', {
+  platform: window.Capacitor?.isNativePlatform() ? 'android' : 'web',
+  project_count: loadProjects().length,
+}), 0);
 
 // ═══════════════════════════════════════════════════════════════
 // localStorage 유틸리티
@@ -1447,6 +1459,13 @@ async function refreshPlanFromDB() {
 // Settings → API → Project URL / anon public
 const SUPABASE_URL  = 'https://jbvkygeksohlysyvaoab.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impidmt5Z2Vrc29obHlzeXZhb2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTk5NjgsImV4cCI6MjA5MTk3NTk2OH0.6RSgChy0Yq0H2TJpZPSoMKQ2V-OYfR0XzE1aJBBZkXI';
+const APP_VERSION   = '1.1.1';
+
+// ── Analytics SDK 초기화 ──────────────────────────────────────
+// analytics-sdk.js가 app.js보다 먼저 로드된 경우에만 초기화
+const analytics = (typeof AnalyticsSDK !== 'undefined')
+  ? new AnalyticsSDK({ supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON, appVersion: APP_VERSION, debug: false })
+  : { track: () => {}, setScreen: () => {}, assignABVariant: async () => 'control' }; // fallback no-op
 
 let _supabase = null;
 
@@ -2035,10 +2054,19 @@ async function purchasePlan(planId) {
     // Supabase DB에도 플랜 반영
     await updateSupabasePlan(newPlan);
 
+    analytics.track('plan_upgrade_completed', {
+      from_plan: getPlan() !== newPlan ? getPlan() : 'free',
+      to_plan: newPlan,
+    });
+
     closePlanModal();
   } catch(e) {
     const msg = (e?.message || e?.code || '').toLowerCase();
     const isCancelled = msg.includes('cancel');
+    analytics.track(isCancelled ? 'plan_upgrade_cancelled' : 'plan_upgrade_started', {
+      to_plan: planId,
+      error: isCancelled ? 'user_cancelled' : (e?.message || 'unknown'),
+    });
     if (!isCancelled) {
       console.error('[Billing] purchasePlan 실패:', e);
       alert(e?.message || '결제 중 오류가 발생했습니다. 다시 시도해주세요.');
@@ -2056,6 +2084,7 @@ async function restorePurchases() {
     // syncPlanFromBilling 내부에서 RC 유료 플랜 → updateSupabasePlan()까지 처리
     // fetchWebPlan 호출 금지: RC 결과를 Supabase free로 덮어쓸 수 있음
     await syncPlanFromBilling();
+    analytics.track('purchase_restored', { plan: getPlan() });
     alert('구매 내역을 복원했습니다.');
   } catch(e) {
     console.error('[Billing] restorePurchases 실패:', e);
@@ -2138,6 +2167,7 @@ function showUpgradeModal(reason) {
   document.getElementById('upgrade-modal-title').textContent = msg.title;
   document.getElementById('upgrade-modal-desc').textContent  = msg.desc[plan] || '';
   document.getElementById('upgrade-modal-overlay').classList.remove('hidden');
+  analytics.track('paywall_viewed', { trigger_source: reason, current_plan: plan });
 }
 
 function closeUpgradeModal() {
@@ -2176,6 +2206,8 @@ function updateProject(updated) {
 // (let 선언은 TDZ로 인해 선언 전 접근 시 ReferenceError 발생)
 
 function navigateTo(view, projectId, opts = {}) {
+  analytics.setScreen(view);
+  analytics.track('screen_view', { view, project_id: projectId || null });
   stopPlayAll();
   stopMetronome();
   // 프로젝트 뷰를 떠나기 전 즉시 저장
@@ -2499,6 +2531,10 @@ function selectActiveProjects(projects, limit = 2) {
 async function promptCreateProject() {
   await refreshPlanFromDB();
   if (!canCreateProject()) {
+    analytics.track('project_limit_hit', {
+      current_count: loadProjects().length,
+      plan_limit: getPlanLimit('maxProjects'),
+    });
     showUpgradeModal('project_limit');
     return;
   }
@@ -2535,6 +2571,7 @@ function confirmCreateProject() {
   saveProjects(projects);
   renderSidebar();
   populateProjectSelect();
+  analytics.track('project_created', { total_count: projects.length });
   navigateTo('project', newProject.id);
 }
 
@@ -4998,6 +5035,7 @@ async function copyShareCode() {
   if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
   else _fallbackCopy(val);
   _flashBtn('share-code-copy-btn', '복사됨!');
+  analytics.track('share_initiated', { type: 'code' });
 }
 async function copyShareUrl() {
   const el = document.getElementById('share-url-input');
@@ -5005,6 +5043,7 @@ async function copyShareUrl() {
   if (navigator.clipboard) await navigator.clipboard.writeText(val).catch(() => _fallbackCopy(val));
   else _fallbackCopy(val);
   _flashBtn('share-url-copy-btn', '복사됨!');
+  analytics.track('share_initiated', { type: 'url' });
 }
 
 let _pendingImportPayload = null;
@@ -5042,7 +5081,12 @@ function confirmImport(mode) {
     if (!targetId) { alert('프로젝트를 선택하세요.'); return; }
   }
   applyImportPayload(targetId, payload, opts);
-  closeModal('modal-import'); _pendingImportPayload = null;
+  closeModal('modal-import');
+  analytics.track('import_completed', {
+    chord_count: payload.chords?.length || 0,
+    target: mode === 'new' ? 'new_project' : 'existing_project',
+  });
+  _pendingImportPayload = null;
   renderSidebar(); populateProjectSelect();
   navigateTo('project', targetId);
 }
@@ -5608,6 +5652,7 @@ function importLibChordToProject() {
   selectedRoot = comp.root;
   selectedBass = comp.bass || '';
 
+  analytics.track('lib_chord_imported', { chord_name: dispName });
   navigateTo('editor', null, { skipResize: true });
   renderRootBtns();
   renderBassBtns();
