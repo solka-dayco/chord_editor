@@ -36,9 +36,11 @@ class AnalyticsSDK {
     plan_upgrade_cancelled:  'subscription',
     purchase_restored:       'subscription',
     // auth
-    sign_in:    'auth',
-    sign_out:   'auth',
-    sign_up:    'auth',
+    sign_in:          'auth',
+    sign_out:         'auth',
+    sign_up:          'auth',
+    login_started:    'auth',
+    onboarding_viewed:'auth',
     // session
     app_open:       'session',
     app_background: 'session',
@@ -58,6 +60,7 @@ class AnalyticsSDK {
     this._queue     = [];
     this._abCache   = {};       // { experimentId: variant }
     this._isFlushing = false;
+    this._userId    = null;     // app.js의 setUserId()로 직접 주입 (localStorage 파싱 대체)
 
     this._setupLifecycleListeners();
     this._startFlushInterval();
@@ -108,6 +111,24 @@ class AnalyticsSDK {
    */
   setScreen(screenName) {
     this._screen = screenName;
+  }
+
+  /**
+   * 로그인 시 user_id 직접 주입 — localStorage 파싱보다 신뢰성 높음
+   * app.js의 onAuthStateChange에서 호출
+   * @param {string} uid - Supabase user.id
+   */
+  setUserId(uid) {
+    this._userId = uid || null;
+    if (this._debug) console.log('[Analytics] userId 설정:', this._userId);
+  }
+
+  /**
+   * 로그아웃 시 user_id 초기화
+   */
+  clearUserId() {
+    this._userId = null;
+    if (this._debug) console.log('[Analytics] userId 초기화');
   }
 
   /**
@@ -186,9 +207,14 @@ class AnalyticsSDK {
   }
 
   _getUserId() {
+    // 1순위: app.js가 직접 주입한 값 (가장 신뢰)
+    if (this._userId) return this._userId;
+
+    // 2순위: localStorage 폴백 (이전 버전 호환용)
     try {
-      // Supabase 세션 토큰에서 user id 추출
-      const keys = Object.keys(localStorage).filter(k => k.includes('auth-token') || k.includes('supabase'));
+      const keys = Object.keys(localStorage).filter(k =>
+        k.includes('auth-token') || k.includes('supabase') || k.startsWith('sb-')
+      );
       for (const key of keys) {
         const raw = localStorage.getItem(key);
         if (!raw) continue;

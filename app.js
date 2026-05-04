@@ -32,11 +32,25 @@ const SH = () => (TB() - TT()) / (STRINGS - 1);
 const DS = () => Math.round(SH() * 0.85);
 
 function resizeCanvas() {
-  // ⚠️ 캔버스 크기 항상 고정 — 환경·세션 무관하게 BASE_W * MAIN_DISPLAY_SCALE 로 고정
+  // ⚠️ 캔버스 크기 — 모바일에서 viewport 기반으로 자동 축소
   // style.width를 절대 초기화(='')하지 말 것:
   //   2x 물리픽셀(canvas.width)이 큰 상태에서 style.width='' 하면 브라우저가
   //   물리픽셀을 CSS크기로 적용 → 컨테이너 팽창 → RATIO 양성 피드백 발생
-  const displayW = Math.round(BASE_W * MAIN_DISPLAY_SCALE); // 항상 고정: 320px
+  let displayW = Math.round(BASE_W * MAIN_DISPLAY_SCALE); // 기본 320px
+
+  if (window.innerWidth <= 1400) {
+    // 모바일: 카드 content 너비에서 gap(8) + apply-btn(32) + 여백(6) 차감
+    const cardEl = canvas.closest('.card');
+    if (cardEl) {
+      const cs = getComputedStyle(cardEl);
+      const contentW = cardEl.getBoundingClientRect().width
+        - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+        - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+      const maxW = Math.floor(contentW - 8 - 32 - 6); // gap + btn + safety
+      displayW = Math.min(displayW, Math.max(220, maxW));
+    }
+  }
+
   canvas.style.width  = displayW + 'px';
   canvas.style.height = 'auto';
   canvas.parentElement.style.width = displayW + 'px'; // canvas-inner 고정 (바레 버튼 기준점)
@@ -1364,12 +1378,8 @@ if (_fd) _fd.textContent = String(currentFretNumber);
 setupOrientationListener();
 
 // ── 앱 시작 이벤트 ──────────────────────────────────────────
-// analytics는 SUPABASE_URL 상수 정의 이후에 초기화되므로
-// 여기서는 setTimeout으로 다음 틱에 호출 (SDK 초기화 타이밍 보장)
-setTimeout(() => analytics.track('app_open', {
-  platform: window.Capacitor?.isNativePlatform() ? 'android' : 'web',
-  project_count: loadProjects().length,
-}), 0);
+// app_open은 tryAutoSignIn() 완료 후 추적 → user_id 첨부 보장
+// (웹은 initSupabase 내부에서 세션 복원 후 추적)
 
 // ═══════════════════════════════════════════════════════════════
 // localStorage 유틸리티
@@ -1459,7 +1469,7 @@ async function refreshPlanFromDB() {
 // Settings → API → Project URL / anon public
 const SUPABASE_URL  = 'https://jbvkygeksohlysyvaoab.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impidmt5Z2Vrc29obHlzeXZhb2FiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTk5NjgsImV4cCI6MjA5MTk3NTk2OH0.6RSgChy0Yq0H2TJpZPSoMKQ2V-OYfR0XzE1aJBBZkXI';
-const APP_VERSION   = '1.1.1';
+const APP_VERSION   = '1.1.2';
 
 // ── Analytics SDK 초기화 ──────────────────────────────────────
 // analytics-sdk.js가 app.js보다 먼저 로드된 경우에만 초기화
@@ -1530,6 +1540,7 @@ async function initSupabase() {
   // 인증 상태 변화 감지
   _supabase.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
+      if (window.analytics) window.analytics.setUserId(session.user.id); // Analytics user_id 주입
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
@@ -1541,6 +1552,7 @@ async function initSupabase() {
         showTutorialIfNeeded();
       }
     } else {
+      if (window.analytics) window.analytics.clearUserId(); // Analytics user_id 초기화
       setPlan('free');
       renderAuthUI(null);
     }
@@ -1552,6 +1564,7 @@ async function initSupabase() {
     const { data: { session } } = await _supabase.auth.getSession();
     if (session?.user) {
       _authReady = true;
+      if (window.analytics) window.analytics.setUserId(session.user.id); // Analytics user_id 주입
       if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
       await fetchWebPlan();
       renderAuthUI(session.user);
@@ -1601,6 +1614,8 @@ async function fetchPlanWithToken(accessToken) {
 async function signInWithGoogle() {
   if (!_supabase) { console.error('[Auth] Supabase 미초기화'); return; }
 
+  analytics.track('login_started', { method: 'google' }); // 로그인 시도
+
   if (window.Capacitor?.isNativePlatform()) {
     try {
       const GoogleAuth = window.Capacitor?.Plugins?.GoogleAuth;
@@ -1629,6 +1644,8 @@ async function signInWithGoogle() {
       const user = session.user;
 
       if (user) {
+        analytics.setUserId(user.id);
+        analytics.track('sign_in', { method: 'google', is_new_user: !session.user.last_sign_in_at });
         if (window._RC) await window._RC.logIn({ appUserID: user.id }).catch(() => {});
         await fetchPlanWithToken(session.access_token);
         renderAuthUI(user);
@@ -1655,32 +1672,60 @@ const _authPromise = new Promise(resolve => { _authResolve = resolve; });
 async function tryAutoSignIn() {
   if (!window.Capacitor?.isNativePlatform()) { _authResolve(); _showOnboardingButtons(); return; }
 
-  // 1) 저장된 세션이 유효하면 온보딩 건너뜀 → 바로 메인으로
   try {
     const stored = localStorage.getItem(SUPABASE_STORAGE_KEY);
     if (stored) {
-      const session = JSON.parse(stored);
+      let session = JSON.parse(stored);
       const now = Math.floor(Date.now() / 1000);
-      if (session.user && session.expires_at > now) {
+
+      // ── 세션 만료 시 refresh_token으로 갱신 시도 ──────────────
+      if ((!session.expires_at || session.expires_at <= now) && session.refresh_token) {
+        try {
+          const resp = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON },
+            body: JSON.stringify({ refresh_token: session.refresh_token }),
+          });
+          if (resp.ok) {
+            const refreshed = await resp.json();
+            if (refreshed.access_token) {
+              session = saveSessionToStorage(refreshed); // 갱신된 세션 저장
+            }
+          }
+        } catch(e) { /* 네트워크 오류 — 아래에서 재확인 */ }
+      }
+
+      // ── 세션 유효 확인 (최초 유효 or 갱신 성공) ──────────────
+      const nowAfter = Math.floor(Date.now() / 1000);
+      if (session.user && session.expires_at > nowAfter) {
         // ✅ 세션 유효 → 온보딩은 항상 표시, 시작하기 버튼으로 진입
         _authReady = true;
         renderAuthUI(session.user);
+        if (window.analytics) {
+          window.analytics.setUserId(session.user.id);
+          window.analytics.track('app_open', {
+            platform: 'android',
+            project_count: loadProjects().length,
+          });
+        }
         _authResolve();
         _showOnboardingButtons();
         // RC 초기화 완료 대기 → RC 플랜 동기화(+Supabase 선반영) → Supabase 읽기
-        // 이 순서를 보장해야 fetchPlanWithToken이 올바른 값을 읽음
         _billingReady.then(async () => {
           if (window._RC) await window._RC.logIn({ appUserID: session.user.id }).catch(() => {});
-          await syncPlanFromBilling(); // 유료이면 updateSupabasePlan()까지 완료
-          fetchPlanWithToken(session.access_token).catch(() => {}); // Supabase 읽기 (이미 올바른 값)
+          await syncPlanFromBilling();
+          fetchPlanWithToken(session.access_token).catch(() => {});
         }).catch(() => {});
         return;
       }
     }
   } catch(e) { /* 무시 */ }
 
-  // 2) 저장된 세션 없음 → Google 로그인 버튼 표시
-  // (GoogleAuth.refresh() 선제 호출 제거 — signIn()과 충돌하여 "Something went wrong" 유발)
+  // 세션 없음 or 갱신 실패 → Google 로그인 버튼 표시
+  analytics.track('app_open', {
+    platform: 'android',
+    project_count: loadProjects().length,
+  });
   _authResolve();
   _showOnboardingButtons();
 }
@@ -1692,6 +1737,10 @@ function _showOnboardingButtons() {
     document.getElementById('onboarding-switch-btn')?.classList.remove('hidden');
   } else {
     document.getElementById('onboarding-google-btn')?.classList.remove('hidden');
+    // 미로그인 유저에게만 온보딩 화면 노출 추적
+    analytics.track('onboarding_viewed', {
+      platform: window.Capacitor?.isNativePlatform() ? 'android' : 'web',
+    });
   }
 }
 
