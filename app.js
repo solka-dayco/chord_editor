@@ -2320,6 +2320,19 @@ function navigateTo(view, projectId, opts = {}) {
     if (screen.orientation?.unlock) {
       try { screen.orientation.unlock(); } catch(e) {}
     }
+    // 프로젝트 열기 전용 이벤트 (screen_view와 분리)
+    const _p = loadProjects().find(p => p.id === projectId);
+    if (_p) {
+      const chordCount = (_p.arrangement || []).reduce((acc, l) => acc + (l.chords?.length || 0), 0);
+      const ageDays = _p.createdAt
+        ? Math.floor((Date.now() - new Date(_p.createdAt)) / 86400000)
+        : null;
+      analytics.track('project_opened', {
+        project_id:  projectId,
+        chord_count: chordCount,
+        age_days:    ageDays,
+      });
+    }
   }
   renderSidebar();
 }
