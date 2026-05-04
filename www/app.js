@@ -2291,7 +2291,7 @@ function navigateTo(view, projectId, opts = {}) {
     renderLibCards(_libRoot);
     // 첫 번째 엔트리 자동 선택 → #lib-canvas 초기 표시
     const _initEntries = (window.chordsLibrary || {})[_libRoot] || [];
-    if (_initEntries.length > 0) selectLibEntry(0);
+    if (_initEntries.length > 0) selectLibEntry(0, { silent: true });
     // .lib-bottom 초기 높이 고정 (한 번만)
     requestAnimationFrame(() => {
       const bottom = document.querySelector('.lib-bottom');
@@ -5330,12 +5330,19 @@ function renderLibCards(root) {
   });
 }
 
-function selectLibEntry(idx) {
+function selectLibEntry(idx, { silent = false } = {}) {
   const entries = (window.chordsLibrary || {})[_libRoot] || [];
   _libEntry = entries[idx];
   if (!_libEntry) return;
   _libCurrentIdx = idx;
   _libFingeringIdx = 0;
+
+  if (!silent) {
+    analytics.track('lib_chord_selected', {
+      chord_name: _libEntry.name,
+      root:       _libRoot,
+    });
+  }
 
   _ensureLibCanvas();
   drawLibViewerCanvas();

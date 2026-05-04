@@ -20,6 +20,7 @@ class AnalyticsSDK {
     library_opened:       'library',
     lib_tab_changed:      'library',
     lib_searched:         'library',
+    lib_chord_selected:   'library',
     lib_chord_imported:   'library',
     // project
     project_created:      'project',
